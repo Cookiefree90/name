@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import os
 import logging
 from typing import Optional
 from typing import TYPE_CHECKING
@@ -137,8 +138,18 @@ class VertexAiMemoryBankService(BaseMemoryService):
     Returns:
       An API client for the given project and location.
     """
+    env_google_api_key = os.environ.get('GOOGLE_API_KEY', None)
+    env_gemini_api_key = os.environ.get('GEMINI_API_KEY', None)
+    if env_google_api_key and env_gemini_api_key:
+      logger.warning(
+          'Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.'
+      )
+    print(env_google_api_key or env_gemini_api_key or None)
     client = genai.Client(
         vertexai=True, project=self._project, location=self._location
+    )
+    client._api_client._http_options.base_url = (
+        'https://staging-aiplatform.sandbox.googleapis.com'
     )
     return client._api_client
 

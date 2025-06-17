@@ -332,6 +332,9 @@ class VertexAiSessionService(BaseSessionService):
     client = genai.Client(
         vertexai=True, project=self._project, location=self._location
     )
+    client._api_client._http_options.base_url = (
+        'https://staging-aiplatform.sandbox.googleapis.com'
+    )
     return client._api_client
 
 
