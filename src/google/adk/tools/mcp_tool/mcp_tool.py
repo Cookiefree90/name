@@ -14,10 +14,13 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 from typing import Optional
 
 from google.genai.types import FunctionDeclaration
+from google.oauth2.credentials import Credentials
 from typing_extensions import override
 
 from .._gemini_schema_util import _to_gemini_schema
@@ -42,13 +45,15 @@ except ImportError as e:
 
 from ...auth.auth_credential import AuthCredential
 from ...auth.auth_schemes import AuthScheme
-from ..base_tool import BaseTool
+from ...auth.auth_tool import AuthConfig
+from ..base_authenticated_tool import BaseAuthenticatedTool
+#  import
 from ..tool_context import ToolContext
 
 logger = logging.getLogger("google_adk." + __name__)
 
 
-class MCPTool(BaseTool):
+class MCPTool(BaseAuthenticatedTool):
   """Turns an MCP Tool into an ADK Tool.
 
   Internally, the tool initializes from a MCP Tool, and uses the MCP Session to
@@ -89,12 +94,14 @@ class MCPTool(BaseTool):
     super().__init__(
         name=name,
         description=mcp_tool.description if mcp_tool.description else "",
+        auth_config=AuthConfig(
+            auth_scheme=auth_scheme, raw_auth_credential=auth_credential
+        )
+        if auth_scheme
+        else None,
     )
     self._mcp_tool = mcp_tool
     self._mcp_session_manager = mcp_session_manager
-    # TODO(cheliu): Support passing auth to MCP Server.
-    self._auth_scheme = auth_scheme
-    self._auth_credential = auth_credential
     self._tool_name_prefix = tool_name_prefix
     self._raw_name = raw_name
 
@@ -112,8 +119,11 @@ class MCPTool(BaseTool):
     )
     return function_decl
 
-  @retry_on_closed_resource("_mcp_session_manager")
-  async def run_async(self, *, args, tool_context: ToolContext):
+  @retry_on_closed_resource
+  @override
+  async def _run_async_impl(
+      self, *, args, tool_context: ToolContext, credential: AuthCredential
+  ):
     """Runs the tool asynchronously.
 
     Args:
@@ -123,8 +133,60 @@ class MCPTool(BaseTool):
     Returns:
         Any: The response from the tool.
     """
-    # Get the session from the session manager
-    session = await self._mcp_session_manager.create_session()
+    # Extract headers from credential for session pooling
+    headers = await self._get_headers(tool_context, credential)
 
-    response = await session.call_tool(self.name, arguments=args)
+    # Get the session from the session manager
+    session = await self._mcp_session_manager.create_session(headers=headers)
+
+    response = await session.call_tool(self._mcp_tool.name, arguments=args)
     return response
+
+  async def _get_headers(
+      self, tool_context: ToolContext, credential: AuthCredential
+  ) -> Optional[dict[str, str]]:
+    headers = None
+    if credential:
+      if credential.oauth2:
+        headers = {"Authorization": f"Bearer {credential.oauth2.access_token}"}
+      elif credential.http:
+        # Handle HTTP authentication schemes
+        if (
+            credential.http.scheme.lower() == "bearer"
+            and credential.http.credentials.token
+        ):
+          headers = {
+              "Authorization": f"Bearer {credential.http.credentials.token}"
+          }
+        elif credential.http.scheme.lower() == "basic":
+          # Handle basic auth
+          if (
+              credential.http.credentials.username
+              and credential.http.credentials.password
+          ):
+
+            credentials = f"{credential.http.credentials.username}:{credential.http.credentials.password}"
+            encoded_credentials = base64.b64encode(
+                credentials.encode()
+            ).decode()
+            headers = {"Authorization": f"Basic {encoded_credentials}"}
+        elif credential.http.credentials.token:
+          # Handle other HTTP schemes with token
+          headers = {
+              "Authorization": (
+                  f"{credential.http.scheme} {credential.http.credentials.token}"
+              )
+          }
+      elif credential.api_key:
+        # For API keys, we'll add them as headers since MCP typically uses header-based auth
+        # The specific header name would depend on the API, using a common default
+        # TODO Allow user to specify the header name for API keys.
+        headers = {"X-API-Key": credential.api_key}
+      elif credential.service_account:
+        # Service accounts should be exchanged for access tokens before reaching this point
+        logger.warning(
+            "Service account credentials should be exchanged before MCP"
+            " session creation"
+        )
+
+    return headers

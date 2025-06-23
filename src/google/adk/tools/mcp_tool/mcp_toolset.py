@@ -22,6 +22,8 @@ from typing import TextIO
 from typing import Union
 
 from ...agents.readonly_context import ReadonlyContext
+from ...auth.auth_credential import AuthCredential
+from ...auth.auth_schemes import AuthScheme
 from ..base_tool import BaseTool
 from ..base_toolset import BaseToolset
 from ..base_toolset import ToolPredicate
@@ -95,6 +97,8 @@ class MCPToolset(BaseToolset):
       ],
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       errlog: TextIO = sys.stderr,
+      auth_scheme: Optional[AuthScheme] = None,
+      auth_credential: Optional[AuthCredential] = None,
       tool_name_prefix: str = "",
   ):
     """Initializes the MCPToolset.
@@ -114,6 +118,8 @@ class MCPToolset(BaseToolset):
         In both cases, the tool name WILL include the `tool_name_prefix` when
         matching.
       errlog: TextIO stream for error logging.
+      auth_scheme: The auth scheme of the tool for tool calling
+      auth_credential: The auth credential of the tool for tool calling
       tool_name_prefix: string to add to the start of the name of all return tools.
         For example, `prefix="ns_"` would change a returned tool name from
         `my_tool` to `ns_my_tool`.
@@ -132,8 +138,10 @@ class MCPToolset(BaseToolset):
         connection_params=self._connection_params,
         errlog=self._errlog,
     )
+    self._auth_scheme = auth_scheme
+    self._auth_credential = auth_credential
 
-  @retry_on_closed_resource("_mcp_session_manager")
+  @retry_on_closed_resource
   async def get_tools(
       self,
       readonly_context: Optional[ReadonlyContext] = None,
@@ -159,6 +167,9 @@ class MCPToolset(BaseToolset):
       mcp_tool = MCPTool(
           mcp_tool=tool,
           mcp_session_manager=self._mcp_session_manager,
+          auth_scheme=self._auth_scheme,
+          auth_credential=self._auth_credential,
+          tool_name_prefix=self._tool_name_prefix,
       )
 
       if self._is_tool_selected(mcp_tool, readonly_context):
