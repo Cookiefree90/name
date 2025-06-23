@@ -199,6 +199,7 @@ def get_fast_api_app(
     artifact_service_uri: Optional[str] = None,
     memory_service_uri: Optional[str] = None,
     allow_origins: Optional[list[str]] = None,
+    frontend_dev_mode: bool = False,
     web: bool,
     trace_to_cloud: bool = False,
     lifespan: Optional[Lifespan[FastAPI]] = None,
@@ -245,14 +246,76 @@ def get_fast_api_app(
   # Run the FastAPI server.
   app = FastAPI(lifespan=internal_lifespan)
 
-  if allow_origins:
+  # Configure CORS based on frontend development mode and explicit origins
+  cors_origins = list(allow_origins) if allow_origins else []
+
+  if frontend_dev_mode:
+    # Add common frontend development server ports
+    dev_origins = [
+        "http://localhost:3000",    # React, Next.js default
+        "http://localhost:3001",    # React alternative
+        "http://localhost:4200",    # Angular default
+        "http://localhost:5173",    # Vite default
+        "http://localhost:8080",    # Vue CLI default
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://127.0.0.1:4200",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:8080",
+    ]
+    cors_origins.extend(dev_origins)
+
+    # Remove duplicates while preserving order
+    cors_origins = list(dict.fromkeys(cors_origins))
+
+  if cors_origins:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allow_origins,
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+  # Add frontend development mode enhancements
+  if frontend_dev_mode:
+    from fastapi import Request, Response
+    from fastapi.responses import JSONResponse
+    import traceback
+
+    @app.middleware("http")
+    async def frontend_dev_middleware(request: Request, call_next):
+      try:
+        response = await call_next(request)
+
+        # Add helpful headers for frontend development
+        response.headers["X-Frontend-Dev-Mode"] = "true"
+        response.headers["X-Server-Time"] = str(int(time.time()))
+
+        # Add CORS headers for preflight requests if not already handled
+        if request.method == "OPTIONS":
+          response.headers["Access-Control-Allow-Origin"] = "*"
+          response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+          response.headers["Access-Control-Allow-Headers"] = "*"
+
+        return response
+      except Exception as e:
+        # In development mode, provide detailed error information
+        error_detail = {
+          "error": str(e),
+          "type": type(e).__name__,
+          "traceback": traceback.format_exc() if frontend_dev_mode else None,
+          "request_info": {
+            "method": request.method,
+            "url": str(request.url),
+            "headers": dict(request.headers),
+          }
+        }
+        return JSONResponse(
+          status_code=500,
+          content=error_detail,
+          headers={"X-Frontend-Dev-Mode": "true"}
+        )
 
   runner_dict = {}
 
@@ -311,6 +374,20 @@ def get_fast_api_app(
 
   # initialize Agent Loader
   agent_loader = AgentLoader(agents_dir)
+
+  @app.get("/dev-info")
+  def get_dev_info() -> dict[str, Any]:
+    """Provides information about development mode settings for frontend developers."""
+    return {
+      "frontend_dev_mode": frontend_dev_mode,
+      "cors_origins": cors_origins if cors_origins else [],
+      "server_time": int(time.time()),
+      "features": {
+        "detailed_errors": frontend_dev_mode,
+        "dev_headers": frontend_dev_mode,
+        "auto_cors": frontend_dev_mode,
+      }
+    }
 
   @app.get("/list-apps")
   def list_apps() -> list[str]:

@@ -515,6 +515,17 @@ def fast_api_common_options():
         multiple=True,
     )
     @click.option(
+        "--frontend-dev-mode",
+        is_flag=True,
+        show_default=True,
+        default=False,
+        help=(
+            "Optional. Enable frontend development mode. Automatically configures "
+            "CORS for common frontend dev ports (3000, 3001, 4200, 5173, 8080), "
+            "enables detailed error responses, and sets up proxy-friendly headers."
+        ),
+    )
+    @click.option(
         "--log_level",
         type=LOG_LEVELS,
         default="INFO",
@@ -566,6 +577,7 @@ def cli_web(
     agents_dir: str,
     log_level: str = "INFO",
     allow_origins: Optional[list[str]] = None,
+    frontend_dev_mode: bool = False,
     host: str = "127.0.0.1",
     port: int = 8000,
     trace_to_cloud: bool = False,
@@ -617,6 +629,7 @@ def cli_web(
       artifact_service_uri=artifact_service_uri,
       memory_service_uri=memory_service_uri,
       allow_origins=allow_origins,
+      frontend_dev_mode=frontend_dev_mode,
       web=True,
       trace_to_cloud=trace_to_cloud,
       lifespan=_lifespan,
@@ -656,6 +669,7 @@ def cli_api_server(
     agents_dir: str,
     log_level: str = "INFO",
     allow_origins: Optional[list[str]] = None,
+    frontend_dev_mode: bool = False,
     host: str = "127.0.0.1",
     port: int = 8000,
     trace_to_cloud: bool = False,
@@ -686,6 +700,7 @@ def cli_api_server(
           artifact_service_uri=artifact_service_uri,
           memory_service_uri=memory_service_uri,
           allow_origins=allow_origins,
+          frontend_dev_mode=frontend_dev_mode,
           web=False,
           trace_to_cloud=trace_to_cloud,
       ),
