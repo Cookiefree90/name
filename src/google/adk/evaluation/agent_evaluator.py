@@ -110,8 +110,7 @@ class AgentEvaluator:
       num_runs: Number of times all entries in the eval dataset should be
         assessed.
       agent_name: The name of the agent.
-      log_detailed_results: Logs detailed results on the console. This is
-        usually helpful during debugging.
+      log_detailed_results: Logs detailed results. All invocation results will be logged if true.
     """
     eval_case_responses_list = await EvaluationGenerator.generate_responses(
         eval_set=eval_set,
