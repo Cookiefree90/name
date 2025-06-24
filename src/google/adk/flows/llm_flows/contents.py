@@ -15,11 +15,13 @@
 from __future__ import annotations
 
 import copy
+from collections import defaultdict
+from operator import attrgetter, itemgetter
 from typing import AsyncGenerator
-from typing import Generator
 from typing import Optional
 
 from google.genai import types
+from pydantic import BaseModel
 from typing_extensions import override
 
 from ...agents.invocation_context import InvocationContext
@@ -58,131 +60,107 @@ class _ContentLlmRequestProcessor(BaseLlmRequestProcessor):
 request_processor = _ContentLlmRequestProcessor()
 
 
-def _rearrange_events_for_async_function_responses_in_history(
+class OrderedPart(BaseModel):
+  event_index: int
+  part_index: int
+  event_timestamp: float
+  role: str
+  part: types.Part
+
+  @property
+  def sort_key(self):
+    return (self.event_index, self.event_timestamp, self.part_index)
+
+
+def _extract_latest_function_parts(
     events: list[Event],
-) -> list[Event]:
+) -> list[types.Content]:
   """Rearrange the async function_response events in the history."""
 
-  function_call_id_to_response_events_index: dict[str, list[Event]] = {}
+  function_call_id_to_parts: dict[str, list[OrderedPart]] = defaultdict(list)
+  all_parts: list[OrderedPart] = []
+
   for i, event in enumerate(events):
-    function_responses = event.get_function_responses()
-    if function_responses:
-      for function_response in function_responses:
-        function_call_id = function_response.id
-        function_call_id_to_response_events_index[function_call_id] = i
-
-  result_events: list[Event] = []
-  for event in events:
-    if event.get_function_responses():
-      # function_response should be handled together with function_call below.
-      continue
-    elif event.get_function_calls():
-
-      function_response_events_indices = set()
-      for function_call in event.get_function_calls():
-        function_call_id = function_call.id
-        if function_call_id in function_call_id_to_response_events_index:
-          function_response_events_indices.add(
-              function_call_id_to_response_events_index[function_call_id]
-          )
-      result_events.append(event)
-      if not function_response_events_indices:
-        continue
-      if len(function_response_events_indices) == 1:
-        result_events.append(
-            events[next(iter(function_response_events_indices))]
+    for j, part in enumerate(event.content.parts):
+      ordered_part = OrderedPart(
+          event_index=i,
+          part_index=j,
+          event_timestamp=event.timestamp,
+          role=event.content.role,
+          part=part,
+      )
+      if part.function_response:
+        function_call_id_to_parts[part.function_response.id].append(
+            ordered_part
         )
-      else:  # Merge all async function_response as one response event
-        result_events.append(
-            _merge_function_response_events(
-                [events[i] for i in sorted(function_response_events_indices)]
+      elif part.function_call:
+        function_call_id_to_parts[part.function_call.id].append(ordered_part)
+      else:
+        all_parts.append(ordered_part)
+
+  for function_call_id, parts in function_call_id_to_parts.items():
+    fc_ordered_part = max(
+        [
+            ordered_part
+            for ordered_part in parts
+            if ordered_part.part.function_call
+        ],
+        key=attrgetter('sort_key'),
+        default=None,
+    )
+    fr_ordered_part = max(
+        [
+            ordered_part
+            for ordered_part in parts
+            if ordered_part.part.function_response
+        ],
+        key=attrgetter('sort_key'),
+        default=None,
+    )
+    if fr_ordered_part:
+      if fc_ordered_part:
+        fc_ordered_part = fc_ordered_part.model_copy()
+        fc_ordered_part.event_index = fr_ordered_part.event_index - 1
+        all_parts.append(fc_ordered_part)
+      all_parts.append(fr_ordered_part)
+    else:
+      all_parts.append(fc_ordered_part)
+
+  sorted_parts = sorted(all_parts, key=attrgetter('sort_key'))
+
+  all_content = []
+  current_parts = []
+  current_role = None
+  for ordered_part in sorted_parts:
+    part = ordered_part.part
+    if ordered_part.role is None:
+      continue
+    if ordered_part.role == current_role:
+      current_parts.append((ordered_part.event_timestamp, part))
+    else:
+      if current_parts:
+        all_content.append(
+            types.Content(
+                role=current_role,
+                parts=[
+                    _part
+                    for _ts, _part in sorted(current_parts, key=itemgetter(0))
+                ],
             )
         )
-      continue
-    else:
-      result_events.append(event)
-
-  return result_events
-
-
-def _rearrange_events_for_latest_function_response(
-    events: list[Event],
-) -> list[Event]:
-  """Rearrange the events for the latest function_response.
-
-  If the latest function_response is for an async function_call, all events
-  between the initial function_call and the latest function_response will be
-  removed.
-
-  Args:
-    events: A list of events.
-
-  Returns:
-    A list of events with the latest function_response rearranged.
-  """
-  if not events:
-    return events
-
-  function_responses = events[-1].get_function_responses()
-  if not function_responses:
-    # No need to process, since the latest event is not fuction_response.
-    return events
-
-  function_responses_ids = set()
-  for function_response in function_responses:
-    function_responses_ids.add(function_response.id)
-
-  function_calls = events[-2].get_function_calls()
-
-  if function_calls:
-    for function_call in function_calls:
-      # The latest function_response is already matched
-      if function_call.id in function_responses_ids:
-        return events
-
-  function_call_event_idx = -1
-  # look for corresponding function call event reversely
-  for idx in range(len(events) - 2, -1, -1):
-    event = events[idx]
-    function_calls = event.get_function_calls()
-    if function_calls:
-      for function_call in function_calls:
-        if function_call.id in function_responses_ids:
-          function_call_event_idx = idx
-          break
-        if function_call_event_idx != -1:
-          # in case the last response event only have part of the responses
-          # for the function calls in the function call event
-          for function_call in function_calls:
-            function_responses_ids.add(function_call.id)
-          break
-
-  if function_call_event_idx == -1:
-    raise ValueError(
-        'No function call event found for function responses ids:'
-        f' {function_responses_ids}'
+      current_role = ordered_part.role
+      current_parts = [(ordered_part.event_timestamp, part)]
+  if current_parts:
+    all_content.append(
+        types.Content(
+            role=current_role,
+            parts=[
+                _part for _ts, _part in sorted(current_parts, key=itemgetter(0))
+            ],
+        )
     )
 
-  # collect all function response between last function response event
-  # and function call event
-
-  function_response_events: list[Event] = []
-  for idx in range(function_call_event_idx + 1, len(events) - 1):
-    event = events[idx]
-    function_responses = event.get_function_responses()
-    if function_responses and any([
-        function_response.id in function_responses_ids
-        for function_response in function_responses
-    ]):
-      function_response_events.append(event)
-  function_response_events.append(events[-1])
-
-  result_events = events[: function_call_event_idx + 1]
-  result_events.append(
-      _merge_function_response_events(function_response_events)
-  )
-
-  return result_events
+  return all_content
 
 
 def _get_contents(
@@ -223,16 +201,9 @@ def _get_contents(
         if _is_other_agent_reply(agent_name, event)
         else event
     )
-
-  result_events = _rearrange_events_for_latest_function_response(
-      filtered_events
-  )
-  result_events = _rearrange_events_for_async_function_responses_in_history(
-      result_events
-  )
   contents = []
-  for event in result_events:
-    content = copy.deepcopy(event.content)
+  for content in _extract_latest_function_parts(filtered_events):
+    content = copy.deepcopy(content)
     remove_client_function_call_id(content)
     contents.append(content)
   return contents
@@ -301,73 +272,6 @@ def _convert_foreign_event(event: Event) -> Event:
       content=content,
       branch=event.branch,
   )
-
-
-def _merge_function_response_events(
-    function_response_events: list[Event],
-) -> Event:
-  """Merges a list of function_response events into one event.
-
-  The key goal is to ensure:
-  1. function_call and function_response are always of the same number.
-  2. The function_call and function_response are consecutively in the content.
-
-  Args:
-    function_response_events: A list of function_response events.
-      NOTE: function_response_events must fulfill these requirements: 1. The
-        list is in increasing order of timestamp; 2. the first event is the
-        initial function_response event; 3. all later events should contain at
-        least one function_response part that related to the function_call
-        event. (Note, 3. may not be true when aync function return some
-        intermediate response, there could also be some intermediate model
-        response event without any function_response and such event will be
-        ignored.)
-      Caveat: This implementation doesn't support when a parallel function_call
-        event contains async function_call of the same name.
-
-  Returns:
-    A merged event, that is
-      1. All later function_response will replace function_response part in
-          the initial function_response event.
-      2. All non-function_response parts will be appended to the part list of
-          the initial function_response event.
-  """
-  if not function_response_events:
-    raise ValueError('At least one function_response event is required.')
-
-  merged_event = function_response_events[0].model_copy(deep=True)
-  parts_in_merged_event: list[types.Part] = merged_event.content.parts  # type: ignore
-
-  if not parts_in_merged_event:
-    raise ValueError('There should be at least one function_response part.')
-
-  part_indices_in_merged_event: dict[str, int] = {}
-  for idx, part in enumerate(parts_in_merged_event):
-    if part.function_response:
-      function_call_id: str = part.function_response.id  # type: ignore
-      part_indices_in_merged_event[function_call_id] = idx
-
-  for event in function_response_events[1:]:
-    if not event.content.parts:
-      raise ValueError('There should be at least one function_response part.')
-
-    for part in event.content.parts:
-      if part.function_response:
-        function_call_id: str = part.function_response.id  # type: ignore
-        if function_call_id in part_indices_in_merged_event:
-          parts_in_merged_event[
-              part_indices_in_merged_event[function_call_id]
-          ] = part
-        else:
-          parts_in_merged_event.append(part)
-          part_indices_in_merged_event[function_call_id] = (
-              len(parts_in_merged_event) - 1
-          )
-
-      else:
-        parts_in_merged_event.append(part)
-
-  return merged_event
 
 
 def _is_event_belongs_to_branch(

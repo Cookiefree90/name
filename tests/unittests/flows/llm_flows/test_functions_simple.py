@@ -19,6 +19,7 @@ from typing import Callable
 from google.adk.agents import Agent
 from google.adk.events.event import Event
 from google.adk.flows.llm_flows.functions import find_matching_function_call
+from google.adk.flows.llm_flows.functions import find_matching_function_call as find_function_call_event_if_last_event_is_function_response
 from google.adk.sessions.session import Session
 from google.adk.tools import ToolContext
 from google.adk.tools.function_tool import FunctionTool
@@ -272,6 +273,7 @@ def test_find_function_call_event_no_function_response_in_last_event():
   ]
 
   result = find_matching_function_call(events)
+  result = find_function_call_event_if_last_event_is_function_response(events)
   assert result is None
 
 

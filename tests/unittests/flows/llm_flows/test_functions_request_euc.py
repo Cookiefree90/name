@@ -347,26 +347,6 @@ def test_function_get_auth_response():
 
 
 def test_function_get_auth_response_partial():
-  id_1 = 'id_1'
-  id_2 = 'id_2'
-  responses = [
-      [
-          function_call(id_1, 'call_external_api1', {}),
-          function_call(id_2, 'call_external_api2', {}),
-      ],
-      [
-          types.Part.from_text(text='response1'),
-      ],
-      [
-          types.Part.from_text(text='response2'),
-      ],
-      [
-          types.Part.from_text(text='final response'),
-      ],
-  ]
-
-  mock_model = testing_utils.MockModel.create(responses=responses)
-  function_invoked = 0
 
   auth_config1 = AuthConfig(
       auth_scheme=OAuth2(
@@ -477,6 +457,7 @@ def test_function_get_auth_response_partial():
           ),
       ),
   )
+  function_invoked = 0
 
   def call_external_api1(tool_context: ToolContext) -> int:
     nonlocal function_invoked
@@ -498,13 +479,57 @@ def test_function_get_auth_response_partial():
     assert auth_response == auth_response2.exchanged_auth_credential
     return 2
 
+  id_1 = 'id_1'
+  id_2 = 'id_2'
+  responses = [
+      [
+          function_call(id_1, 'call_external_api1', {}),
+          function_call(id_2, 'call_external_api2', {}),
+      ],
+      [
+          types.Part.from_text(text='response1'),
+      ],
+      [
+          types.Part.from_text(text='response2'),
+      ],
+      [
+          types.Part.from_text(text='final response'),
+      ],
+  ]
+
+  mock_model = testing_utils.MockModel.create(responses=responses)
   agent = Agent(
       name='root_agent',
       model=mock_model,
       tools=[call_external_api1, call_external_api2],
   )
   runner = testing_utils.InMemoryRunner(agent)
+
   runner.run('test')
+
+  # Expect the initial request, a parallel call, a parallel response
+  request = mock_model.requests[-1]
+  assert len(request.contents) == 3
+
+  parallel_auth_request_parts = request.contents[-1].parts
+  assert len(parallel_auth_request_parts) == 2
+
+  assert (
+      parallel_auth_request_parts[0].function_response.name
+      == 'call_external_api1'
+  )
+  assert parallel_auth_request_parts[0].function_response.response == {
+      'result': None
+  }
+  assert (
+      parallel_auth_request_parts[1].function_response.name
+      == 'call_external_api2'
+  )
+  assert parallel_auth_request_parts[1].function_response.response == {
+      'result': None
+  }
+
+  # Set up to provide auth
   request_euc_function_call_event = runner.session.events[-3]
   function_response1 = types.FunctionResponse(
       name=request_euc_function_call_event.content.parts[0].function_call.name,
@@ -521,6 +546,8 @@ def test_function_get_auth_response_partial():
   function_response2.id = request_euc_function_call_event.content.parts[
       1
   ].function_call.id
+
+  # Provide auth and resume functions
   runner.run(
       new_message=types.Content(
           role='user',
@@ -532,14 +559,25 @@ def test_function_get_auth_response_partial():
 
   assert function_invoked == 3
   assert len(mock_model.requests) == 3
+
+  # Expect:
+  #  - the initial request
+  #  - a single api2 call (remaining)
+  #  - an api2 euc-needed response
+  #  - an api1 function call
+  #  - and an authed api1 response
   request = mock_model.requests[-1]
-  content = request.contents[-1]
-  parts = content.parts
-  assert len(parts) == 2
-  assert parts[0].function_response.name == 'call_external_api1'
-  assert parts[0].function_response.response == {'result': 1}
-  assert parts[1].function_response.name == 'call_external_api2'
-  assert parts[1].function_response.response == {'result': None}
+  assert len(request.contents) == 5
+
+  api1_parts = request.contents[-1].parts
+  assert len(api1_parts) == 1
+  api2_parts = request.contents[-3].parts
+  assert len(api2_parts) == 1
+
+  assert api1_parts[0].function_response.name == 'call_external_api1'
+  assert api1_parts[0].function_response.response == {'result': 1}
+  assert api2_parts[0].function_response.name == 'call_external_api2'
+  assert api2_parts[0].function_response.response == {'result': None}
 
   runner.run(
       new_message=types.Content(
@@ -549,13 +587,24 @@ def test_function_get_auth_response_partial():
           ],
       ),
   )
-  # assert function_invoked == 4
   assert len(mock_model.requests) == 4
+
   request = mock_model.requests[-1]
-  content = request.contents[-1]
-  parts = content.parts
-  assert len(parts) == 2
-  assert parts[0].function_response.name == 'call_external_api1'
-  assert parts[0].function_response.response == {'result': None}
-  assert parts[1].function_response.name == 'call_external_api2'
-  assert parts[1].function_response.response == {'result': 2}
+  assert len(request.contents) == 5
+
+  # Now api2 is authed, expect it to be more recent
+  # Expect:
+  #  - the initial request
+  #  - an api1 function call
+  #  - an authed api1 response
+  #  - a more recent api2 function call
+  #  - an authed api2 response
+  api2_parts = request.contents[-1].parts
+  assert len(api2_parts) == 1
+  api1_parts = request.contents[-3].parts
+  assert len(api1_parts) == 1
+
+  assert api1_parts[0].function_response.name == 'call_external_api1'
+  assert api1_parts[0].function_response.response == {'result': 1}
+  assert api2_parts[0].function_response.name == 'call_external_api2'
+  assert api2_parts[0].function_response.response == {'result': 2}
