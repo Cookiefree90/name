@@ -147,7 +147,7 @@ class AgentEvaluator:
             logger.info(f"Expected invocation: '{per_invocation_result.expected_invocation}'")
             logger.info(f"Score: {per_invocation_result.score}")
             logger.info(f"Eval Status: {per_invocation_result.eval_status}")
-            logger.error("-" * 100)
+            logger.info("-" * 100)
 
         assert evaluation_result.overall_eval_status == EvalStatus.PASSED, (
             f"{metric_name} for {agent_module} Failed. Expected {threshold},"
