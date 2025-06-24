@@ -142,6 +142,7 @@ class AgentEvaluator:
         )
 
         if log_detailed_results:
+          logger.info(f"Detailed results for {metric_name} for {agent_module}:")
           for per_invocation_result in evaluation_result.per_invocation_results:
             logger.info(f"Actual invocation: '{per_invocation_result.actual_invocation}'")
             logger.info(f"Expected invocation: '{per_invocation_result.expected_invocation}'")
