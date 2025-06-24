@@ -93,7 +93,7 @@ def test_async_function():
   assert len(mockModel.requests) == 3
   assert testing_utils.simplify_contents(mockModel.requests[2].contents) == [
       ('user', 'test1'),
-      ('model', increase_by_one_call),
+      ('model', [increase_by_one_call, Part.from_text(text='response1')]),
       ('user', still_waiting_response),
   ]
 
@@ -108,7 +108,14 @@ def test_async_function():
   assert len(mockModel.requests) == 4
   assert testing_utils.simplify_contents(mockModel.requests[3].contents) == [
       ('user', 'test1'),
-      ('model', increase_by_one_call),
+      (
+          'model',
+          [
+              increase_by_one_call,
+              Part.from_text(text='response1'),
+              Part.from_text(text='response2'),
+          ],
+      ),
       ('user', result_response),
   ]
   assert testing_utils.simplify_events(events) == [('root_agent', 'response3')]
@@ -123,7 +130,15 @@ def test_async_function():
   assert len(mockModel.requests) == 5
   assert testing_utils.simplify_contents(mockModel.requests[4].contents) == [
       ('user', 'test1'),
-      ('model', increase_by_one_call),
+      (
+          'model',
+          [
+              increase_by_one_call,
+              Part.from_text(text='response1'),
+              Part.from_text(text='response2'),
+              Part.from_text(text='response3'),
+          ],
+      ),
       ('user', another_result_response),
   ]
   assert testing_utils.simplify_events(events) == [('root_agent', 'response4')]
@@ -205,7 +220,7 @@ def test_async_function_with_none_response():
   assert len(mockModel.requests) == 3
   assert testing_utils.simplify_contents(mockModel.requests[2].contents) == [
       ('user', 'test1'),
-      ('model', increase_by_one_call),
+      ('model', [increase_by_one_call, Part.from_text(text='response1')]),
       ('user', still_waiting_response),
   ]
 
@@ -220,7 +235,14 @@ def test_async_function_with_none_response():
   assert len(mockModel.requests) == 4
   assert testing_utils.simplify_contents(mockModel.requests[3].contents) == [
       ('user', 'test1'),
-      ('model', increase_by_one_call),
+      (
+          'model',
+          [
+              increase_by_one_call,
+              Part.from_text(text='response1'),
+              Part.from_text(text='response2'),
+          ],
+      ),
       ('user', result_response),
   ]
   assert testing_utils.simplify_events(events) == [('root_agent', 'response3')]
@@ -235,7 +257,15 @@ def test_async_function_with_none_response():
   assert len(mockModel.requests) == 5
   assert testing_utils.simplify_contents(mockModel.requests[4].contents) == [
       ('user', 'test1'),
-      ('model', increase_by_one_call),
+      (
+          'model',
+          [
+              increase_by_one_call,
+              Part.from_text(text='response1'),
+              Part.from_text(text='response2'),
+              Part.from_text(text='response3'),
+          ],
+      ),
       ('user', another_result_response),
   ]
   assert testing_utils.simplify_events(events) == [('root_agent', 'response4')]
