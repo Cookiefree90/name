@@ -96,6 +96,7 @@ class AgentEvaluator:
       criteria: dict[str, float],
       num_runs=NUM_RUNS,
       agent_name=None,
+      log_detailed_results: bool = False,
   ):
     """Evaluates an agent using the given EvalSet.
 
@@ -109,6 +110,8 @@ class AgentEvaluator:
       num_runs: Number of times all entries in the eval dataset should be
         assessed.
       agent_name: The name of the agent.
+      log_detailed_results: Logs detailed results on the console. This is
+        usually helpful during debugging.
     """
     eval_case_responses_list = await EvaluationGenerator.generate_responses(
         eval_set=eval_set,
@@ -139,6 +142,14 @@ class AgentEvaluator:
             )
         )
 
+        if log_detailed_results:
+          for per_invocation_result in evaluation_result.per_invocation_results:
+            logger.info(f"Actual invocation: '{per_invocation_result.actual_invocation}'")
+            logger.info(f"Expected invocation: '{per_invocation_result.expected_invocation}'")
+            logger.info(f"Score: {per_invocation_result.score}")
+            logger.info(f"Eval Status: {per_invocation_result.eval_status}")
+            logger.error("-" * 100)
+
         assert evaluation_result.overall_eval_status == EvalStatus.PASSED, (
             f"{metric_name} for {agent_module} Failed. Expected {threshold},"
             f" but got {evaluation_result.overall_score}."
@@ -151,6 +162,7 @@ class AgentEvaluator:
       num_runs: int = NUM_RUNS,
       agent_name: Optional[str] = None,
       initial_session_file: Optional[str] = None,
+      log_detailed_results: bool = False,
   ):
     """Evaluates an Agent given eval data.
 
@@ -166,6 +178,7 @@ class AgentEvaluator:
       agent_name: The name of the agent.
       initial_session_file: File that contains initial session state that is
         needed by all the evals in the eval dataset.
+      log_detailed_results: Logs detailed results. All invocation results will be logged if true.
     """
     test_files = []
     if isinstance(eval_dataset_file_path_or_dir, str) and os.path.isdir(
@@ -192,6 +205,7 @@ class AgentEvaluator:
           criteria=criteria,
           num_runs=num_runs,
           agent_name=agent_name,
+          log_detailed_results=log_detailed_results,
       )
 
   @staticmethod
