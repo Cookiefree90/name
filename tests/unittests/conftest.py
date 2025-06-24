@@ -24,6 +24,7 @@ _ENV_VARS = {
     'GOOGLE_CLOUD_PROJECT': 'fake_google_cloud_project',
     'GOOGLE_CLOUD_LOCATION': 'fake_google_cloud_location',
     'ADK_ALLOW_WIP_FEATURES': 'true',
+    'SESSION_SECRET': 'fake_session_secret',
 }
 
 ENV_SETUPS = {
