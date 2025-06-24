@@ -15,11 +15,7 @@
 """Credential exchanger module."""
 
 from .base_credential_exchanger import BaseCredentialExchanger
-from .credential_exchanger_registry import CredentialExchangerRegistry
-from .service_account_credential_exchanger import ServiceAccountCredentialExchanger
 
 __all__ = [
     "BaseCredentialExchanger",
-    "CredentialExchangerRegistry",
-    "ServiceAccountCredentialExchanger",
 ]
