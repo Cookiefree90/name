@@ -416,9 +416,26 @@ class MockLLMClient(LiteLLMClient):
     self.completion_mock = completion_mock
 
   async def acompletion(self, model, messages, tools, **kwargs):
-    return await self.acompletion_mock(
-        model=model, messages=messages, tools=tools, **kwargs
-    )
+    if kwargs.get("stream", False):
+      kwargs_copy = dict(kwargs)
+      kwargs_copy.pop("stream", None)
+
+      async def stream_generator():
+        stream_data = self.completion_mock(
+            model=model,
+            messages=messages,
+            tools=tools,
+            stream=True,
+            **kwargs_copy,
+        )
+        for item in stream_data:
+          yield item
+
+      return stream_generator()
+    else:
+      return await self.acompletion_mock(
+          model=model, messages=messages, tools=tools, **kwargs
+      )
 
   def completion(self, model, messages, tools, stream, **kwargs):
     return self.completion_mock(
@@ -1194,11 +1211,11 @@ async def test_generate_content_async_stream(
   assert responses[2].content.role == "model"
   assert responses[2].content.parts[0].text == "two:"
   assert responses[3].content.role == "model"
-  assert responses[3].content.parts[0].function_call.name == "test_function"
-  assert responses[3].content.parts[0].function_call.args == {
+  assert responses[3].content.parts[-1].function_call.name == "test_function"
+  assert responses[3].content.parts[-1].function_call.args == {
       "test_arg": "test_value"
   }
-  assert responses[3].content.parts[0].function_call.id == "test_tool_call_id"
+  assert responses[3].content.parts[-1].function_call.id == "test_tool_call_id"
   mock_completion.assert_called_once()
 
   _, kwargs = mock_completion.call_args
@@ -1257,11 +1274,11 @@ async def test_generate_content_async_stream_with_usage_metadata(
   assert responses[2].content.role == "model"
   assert responses[2].content.parts[0].text == "two:"
   assert responses[3].content.role == "model"
-  assert responses[3].content.parts[0].function_call.name == "test_function"
-  assert responses[3].content.parts[0].function_call.args == {
+  assert responses[3].content.parts[-1].function_call.name == "test_function"
+  assert responses[3].content.parts[-1].function_call.args == {
       "test_arg": "test_value"
   }
-  assert responses[3].content.parts[0].function_call.id == "test_tool_call_id"
+  assert responses[3].content.parts[-1].function_call.id == "test_tool_call_id"
 
   assert responses[3].usage_metadata.prompt_token_count == 10
   assert responses[3].usage_metadata.candidates_token_count == 5
