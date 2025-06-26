@@ -17,7 +17,7 @@ import os
 from pytest import fixture
 from pytest import FixtureRequest
 from pytest import hookimpl
-from pytest import Metafunc
+from _pytest.python import Metafunc
 
 _ENV_VARS = {
     'GOOGLE_API_KEY': 'fake_google_api_key',

@@ -760,5 +760,111 @@ def test_debug_trace(test_app):
   logger.info("Debug trace test completed successfully")
 
 
+def test_dev_info_endpoint_without_frontend_dev_mode(test_app):
+  """Test the /dev-info endpoint when frontend dev mode is disabled."""
+  response = test_app.get("/dev-info")
+
+  assert response.status_code == 200
+  data = response.json()
+
+  # Verify the structure and default values
+  assert "frontend_dev_mode" in data
+  assert "cors_origins" in data
+  assert "server_time" in data
+  assert "features" in data
+
+  # Should be False since test_app doesn't enable frontend_dev_mode
+  assert data["frontend_dev_mode"] is False
+  assert data["features"]["detailed_errors"] is False
+  assert data["features"]["dev_headers"] is False
+  assert data["features"]["auto_cors"] is False
+
+  logger.info("Dev info endpoint test completed successfully")
+
+
+@pytest.fixture
+def test_app_with_frontend_dev_mode(
+    mock_session_service,
+    mock_artifact_service,
+    mock_memory_service,
+    mock_agent_loader,
+    mock_eval_sets_manager,
+    mock_eval_set_results_manager,
+):
+  """Create a TestClient for the FastAPI app with frontend dev mode enabled."""
+  with patch(
+      "google.adk.cli.utils.agent_loader.AgentLoader", return_value=mock_agent_loader
+  ), patch(
+      "google.adk.cli.fast_api.InMemorySessionService",
+      return_value=mock_session_service,
+  ), patch(
+      "google.adk.cli.fast_api.InMemoryArtifactService",
+      return_value=mock_artifact_service,
+  ), patch(
+      "google.adk.cli.fast_api.InMemoryMemoryService",
+      return_value=mock_memory_service,
+  ), patch(
+      "google.adk.cli.fast_api.LocalEvalSetsManager",
+      return_value=mock_eval_sets_manager,
+  ), patch(
+      "google.adk.cli.fast_api.LocalEvalSetResultsManager",
+      return_value=mock_eval_set_results_manager,
+  ), patch(
+      "google.adk.cli.cli_eval.run_evals",
+      new=mock_run_evals_for_fast_api,
+  ):
+    # Get the FastAPI app with frontend dev mode enabled
+    app = get_fast_api_app(
+        agents_dir=".",
+        web=True,
+        session_service_uri="",
+        artifact_service_uri="",
+        memory_service_uri="",
+        allow_origins=["http://example.com:3000"],
+        frontend_dev_mode=True,  # Enable frontend dev mode
+    )
+
+    # Create a TestClient
+    client = TestClient(app)
+    return client
+
+
+def test_dev_info_endpoint_with_frontend_dev_mode(test_app_with_frontend_dev_mode):
+  """Test the /dev-info endpoint when frontend dev mode is enabled."""
+  response = test_app_with_frontend_dev_mode.get("/dev-info")
+
+  assert response.status_code == 200
+  data = response.json()
+
+  # Verify frontend dev mode is enabled
+  assert data["frontend_dev_mode"] is True
+  assert data["features"]["detailed_errors"] is True
+  assert data["features"]["dev_headers"] is True
+  assert data["features"]["auto_cors"] is True
+
+  # Verify CORS origins include both explicit and auto-added dev origins
+  cors_origins = data["cors_origins"]
+  assert "http://example.com:3000" in cors_origins  # Explicit origin
+  assert "http://localhost:3000" in cors_origins    # Auto-added dev origin
+  assert "http://localhost:4200" in cors_origins    # Auto-added dev origin
+  assert "http://localhost:5173" in cors_origins    # Auto-added dev origin
+
+  logger.info("Frontend dev mode endpoint test completed successfully")
+
+
+def test_frontend_dev_mode_headers(test_app_with_frontend_dev_mode):
+  """Test that frontend dev mode adds helpful headers to responses."""
+  response = test_app_with_frontend_dev_mode.get("/list-apps")
+
+  assert response.status_code == 200
+
+  # Verify dev mode headers are present
+  assert "X-Frontend-Dev-Mode" in response.headers
+  assert response.headers["X-Frontend-Dev-Mode"] == "true"
+  assert "X-Server-Time" in response.headers
+
+  logger.info("Frontend dev mode headers test completed successfully")
+
+
 if __name__ == "__main__":
   pytest.main(["-xvs", __file__])
