@@ -147,7 +147,7 @@ For any changes that impact user-facing documentation (guides, API reference, tu
     pytest ./tests/unittests
     ```
 
-    NOTE: for accurate repro of failure, only include `test`, `eval`, and 
+    NOTE: for accurate repro of failure, only include `test`, `eval` and 
     `a2a` as extra dependencies.
 
     ```shell
