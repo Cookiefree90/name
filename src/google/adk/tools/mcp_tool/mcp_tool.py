@@ -67,6 +67,7 @@ class MCPTool(BaseAuthenticatedTool):
       mcp_session_manager: MCPSessionManager,
       auth_scheme: Optional[AuthScheme] = None,
       auth_credential: Optional[AuthCredential] = None,
+      tool_name_prefix: str = "",
   ):
     """Initializes an MCPTool.
 
@@ -78,12 +79,20 @@ class MCPTool(BaseAuthenticatedTool):
         mcp_session_manager: The MCP session manager to use for communication.
         auth_scheme: The authentication scheme to use.
         auth_credential: The authentication credential to use.
+        tool_name_prefix: string to add to the start of the tool name. For example,
+          `prefix="ns_"` would name `my_tool` as `ns_my_tool`.
 
     Raises:
         ValueError: If mcp_tool or mcp_session_manager is None.
     """
+    if mcp_tool is None:
+      raise ValueError("mcp_tool cannot be None")
+    if mcp_session_manager is None:
+      raise ValueError("mcp_session_manager cannot be None")
+    raw_name = mcp_tool.name
+    name = tool_name_prefix + raw_name
     super().__init__(
-        name=mcp_tool.name,
+        name=name,
         description=mcp_tool.description if mcp_tool.description else "",
         auth_config=AuthConfig(
             auth_scheme=auth_scheme, raw_auth_credential=auth_credential
@@ -93,6 +102,8 @@ class MCPTool(BaseAuthenticatedTool):
     )
     self._mcp_tool = mcp_tool
     self._mcp_session_manager = mcp_session_manager
+    self._tool_name_prefix = tool_name_prefix
+    self._raw_name = raw_name
 
   @override
   def _get_declaration(self) -> FunctionDeclaration:
@@ -128,7 +139,7 @@ class MCPTool(BaseAuthenticatedTool):
     # Get the session from the session manager
     session = await self._mcp_session_manager.create_session(headers=headers)
 
-    response = await session.call_tool(self.name, arguments=args)
+    response = await session.call_tool(self._mcp_tool.name, arguments=args)
     return response
 
   async def _get_headers(
