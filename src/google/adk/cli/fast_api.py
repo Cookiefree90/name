@@ -353,6 +353,16 @@ def get_fast_api_app(
     agent_names.sort()
     return agent_names
 
+  @app.get("/get-app/{app_name}")
+  def get_app(app_name: str) -> Any:
+    agent = agent_loader.load_agent(app_name)
+
+    return {
+        "name": agent.name,
+        "description": agent.description,
+        "instruction": agent.instruction,
+    }
+
   @app.get("/debug/trace/{event_id}")
   def get_trace_dict(event_id: str) -> Any:
     event_dict = trace_dict.get(event_id, None)

@@ -80,6 +80,12 @@ class BaseAgent(BaseModel):
   One-line description is enough and preferred.
   """
 
+  instruction: str = ''
+  """Description about the agent's system instruction.
+
+  The model uses this to determine the overall instruction for the agent.
+  """
+
   parent_agent: Optional[BaseAgent] = Field(default=None, init=False)
   """The parent agent of this agent.
 
