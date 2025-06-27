@@ -37,6 +37,7 @@ from typing_extensions import override
 
 from .base_llm import BaseLlm
 from .llm_response import LlmResponse
+from .retry_utils import retry_async_generator
 
 if TYPE_CHECKING:
   from .llm_request import LlmRequest
@@ -201,7 +202,7 @@ def function_declaration_to_tool_param(
 
 
 class Claude(BaseLlm):
-  """ "Integration with Claude models served from Vertex AI.
+  """Integration with Claude models served from Vertex AI.
 
   Attributes:
     model: The name of the Claude model.
@@ -218,6 +219,22 @@ class Claude(BaseLlm):
   async def generate_content_async(
       self, llm_request: LlmRequest, stream: bool = False
   ) -> AsyncGenerator[LlmResponse, None]:
+    async def _generate_content():
+      async for response in self._generate_content_impl(llm_request, stream):
+        yield response
+
+    operation_name = (
+        f"Claude {self.model} {'streaming' if stream else 'non-streaming'} call"
+    )
+    async for response in retry_async_generator(
+        _generate_content, self.retry_config, operation_name
+    ):
+      yield response
+
+  async def _generate_content_impl(
+      self, llm_request: LlmRequest, stream: bool = False
+  ) -> AsyncGenerator[LlmResponse, None]:
+    """Internal implementation of generate_content_async with retry logic."""
     messages = [
         content_to_message_param(content)
         for content in llm_request.contents or []

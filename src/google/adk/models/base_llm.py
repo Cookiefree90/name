@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 
 from .base_llm_connection import BaseLlmConnection
+from .retry_utils import RetryConfig
 
 if TYPE_CHECKING:
   from .llm_request import LlmRequest
@@ -43,6 +44,9 @@ class BaseLlm(BaseModel):
 
   model: str
   """The name of the LLM, e.g. gemini-1.5-flash or gemini-1.5-flash-001."""
+
+  retry_config: RetryConfig = RetryConfig()
+  """Configuration for retry behavior with exponential backoff."""
 
   @classmethod
   def supported_models(cls) -> list[str]:
