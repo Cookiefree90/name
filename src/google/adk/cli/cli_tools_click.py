@@ -31,12 +31,12 @@ import uvicorn
 from . import cli_create
 from . import cli_deploy
 from .. import version
+from ..evaluation.constants import MISSING_EVAL_DEPENDENCIES_MESSAGE
 from ..evaluation.gcs_eval_set_results_manager import GcsEvalSetResultsManager
 from ..evaluation.gcs_eval_sets_manager import GcsEvalSetsManager
 from ..evaluation.local_eval_set_results_manager import LocalEvalSetResultsManager
 from ..sessions.in_memory_session_service import InMemorySessionService
 from .cli import run_cli
-from .cli_eval import MISSING_EVAL_DEPENDENCIES_MESSAGE
 from .fast_api import get_fast_api_app
 from .utils import envs
 from .utils import evals
@@ -489,7 +489,8 @@ def adk_services_options():
         type=str,
         help=(
             """Optional. The URI of the memory service.
-            - Use 'rag://<rag_corpus_id>' to connect to Vertex AI Rag Memory Service."""
+            - Use 'rag://<rag_corpus_id>' to connect to Vertex AI Rag Memory Service.
+            - Use 'agentengine://<agent_engine_resource_id>' to connect to Vertex AI Memory Bank Service. e.g. agentengine://12345"""
         ),
         default=None,
     )
@@ -575,6 +576,13 @@ def fast_api_common_options():
             " for Cloud Run."
         ),
     )
+    @click.option(
+        "--a2a",
+        is_flag=True,
+        show_default=True,
+        default=False,
+        help="Optional. Whether to enable A2A endpoint.",
+    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
       return func(*args, **kwargs)
@@ -616,6 +624,7 @@ def cli_web(
     memory_service_uri: Optional[str] = None,
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
+    a2a: bool = False,
 ):
   """Starts a FastAPI server with Web UI for agents.
 
@@ -662,6 +671,9 @@ def cli_web(
       web=True,
       trace_to_cloud=trace_to_cloud,
       lifespan=_lifespan,
+      a2a=a2a,
+      host=host,
+      port=port,
   )
   config = uvicorn.Config(
       app,
@@ -708,6 +720,7 @@ def cli_api_server(
     memory_service_uri: Optional[str] = None,
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
+    a2a: bool = False,
 ):
   """Starts a FastAPI server for agents.
 
@@ -732,6 +745,9 @@ def cli_api_server(
           allow_origins=allow_origins,
           web=False,
           trace_to_cloud=trace_to_cloud,
+          a2a=a2a,
+          host=host,
+          port=port,
       ),
       host=host,
       port=port,
@@ -853,6 +869,7 @@ def cli_deploy_cloud_run(
     eval_storage_uri: Optional[str] = None,
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
+    a2a: bool = False,
 ):
   """Deploys an agent to Cloud Run.
 
@@ -883,6 +900,7 @@ def cli_deploy_cloud_run(
         session_service_uri=session_service_uri,
         artifact_service_uri=artifact_service_uri,
         memory_service_uri=memory_service_uri,
+        a2a=a2a,
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
