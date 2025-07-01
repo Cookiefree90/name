@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-** Please make sure you read the contribution guide and file the issues in the rigth place. **
+** Please make sure you read the contribution guide and file the issues in the right place. **
 [Contribution guide.](https://google.github.io/adk-docs/contributing-guide/)
 
 **Describe the bug**
@@ -30,6 +30,9 @@ If applicable, add screenshots to help explain your problem.
  - OS: [e.g. iOS]
  - Python version(python -V):
  - ADK version(pip show google-adk):
+
+ **Model Information:**
+ For example, which model is being used.
 
 **Additional context**
 Add any other context about the problem here.
