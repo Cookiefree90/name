@@ -29,6 +29,7 @@ from ..sessions.base_session_service import BaseSessionService
 from ..sessions.in_memory_session_service import InMemorySessionService
 from ..sessions.session import Session
 from .eval_case import EvalCase
+from .eval_case import FunctionSpec
 from .eval_case import IntermediateData
 from .eval_case import Invocation
 from .eval_case import SessionInput
@@ -153,6 +154,17 @@ class EvaluationGenerator:
     user_id = initial_session.user_id if initial_session else "test_user_id"
     session_id = session_id if session_id else str(uuid.uuid4())
 
+    function_specs = []
+    if hasattr(root_agent, "canonical_tools"):
+      tools = await root_agent.canonical_tools()
+      for tool in tools:
+        function_specs.append(
+            FunctionSpec(
+                name=tool.name,
+                description=tool.description,
+            )
+        )
+
     _ = await session_service.create_session(
         app_name=app_name,
         user_id=user_id,
@@ -201,6 +213,7 @@ class EvaluationGenerator:
               user_content=user_content,
               final_response=final_response,
               intermediate_data=IntermediateData(tool_uses=tool_uses),
+              function_api_spec=function_specs,
           )
       )
 
