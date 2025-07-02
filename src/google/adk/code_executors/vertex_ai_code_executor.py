@@ -136,9 +136,41 @@ class VertexAiCodeExecutor(BaseCodeExecutor):
     """
     super().__init__(**data)
     self.resource_name = resource_name
+    self.initialize_extension()
+
+  def initialize_extension(self) -> None:
+    """Initializes the Vertex Code Interpreter Extension."""
     self._code_interpreter_extension = _get_code_interpreter_extension(
         self.resource_name
     )
+
+  def _ensure_extension_initialized(self) -> None:
+    """Ensures the extension is initialized, re-initializing if necessary."""
+    if (
+        not hasattr(self, '_code_interpreter_extension')
+        or self._code_interpreter_extension is None
+    ):
+      self.initialize_extension()
+
+  def __deepcopy__(self, memo: dict[int, Any] | None = None):
+    # Create a copy by temporarily removing the problematic extension
+    # Store the extension temporarily
+    original_extension = getattr(self, '_code_interpreter_extension', None)
+
+    # Temporarily set extension to None
+    self._code_interpreter_extension = None
+
+    # Now perform the deepcopy safely
+    try:
+      copied = super().__deepcopy__(memo)
+    finally:
+      # Restore the original extension
+      self._code_interpreter_extension = original_extension
+
+    # Set the copied object's extension to None - it will be re-initialized when needed
+    copied._code_interpreter_extension = None
+
+    return copied
 
   @override
   def execute_code(
@@ -209,6 +241,9 @@ class VertexAiCodeExecutor(BaseCodeExecutor):
     Returns:
       The response from the code interpreter extension.
     """
+    # Ensure extension is initialized (re-initialize if it was set to None during deepcopy)
+    self._ensure_extension_initialized()
+
     operation_params = {'code': code}
     if input_files:
       operation_params['files'] = [
