@@ -129,7 +129,7 @@ class LlmAgent(BaseAgent):
   global_instruction: Union[str, InstructionProvider] = ''
   """Instructions for all the agents in the entire agent tree.
 
-  global_instruction ONLY takes effect in root agent.
+  ONLY the global_instruction in root agent will take effect.
 
   For example: use global_instruction to make all agents have a stable identity
   or personality.
@@ -161,10 +161,12 @@ class LlmAgent(BaseAgent):
   # LLM-based agent transfer configs - End
 
   include_contents: Literal['default', 'none'] = 'default'
-  """Whether to include contents in the model request.
+  """Controls content inclusion in model requests.
 
-  When set to 'none', the model request will not include any contents, such as
-  user messages, tool results, etc.
+  Options:
+      default: Model receives relevant conversation history
+      none: Model receives no prior history, operates solely on current
+            instruction and input
   """
 
   # Controlled input/output configurations - Start
@@ -203,11 +205,6 @@ class LlmAgent(BaseAgent):
   NOTE: to use model's built-in code executor, use the `BuiltInCodeExecutor`.
   """
   # Advance features - End
-
-  # TODO: remove below fields after migration. - Start
-  # These fields are added back for easier migration.
-  examples: Optional[ExamplesUnion] = None
-  # TODO: remove above fields after migration. - End
 
   # Callbacks - Start
   before_model_callback: Optional[BeforeModelCallback] = None
@@ -434,16 +431,31 @@ class LlmAgent(BaseAgent):
 
   def __maybe_save_output_to_state(self, event: Event):
     """Saves the model output to state if needed."""
+    # skip if the event was authored by some other agent (e.g. current agent
+    # transferred to another agent)
+    if event.author != self.name:
+      logger.debug(
+          'Skipping output save for agent %s: event authored by %s',
+          self.name,
+          event.author,
+      )
+      return
     if (
         self.output_key
         and event.is_final_response()
         and event.content
         and event.content.parts
     ):
+
       result = ''.join(
           [part.text if part.text else '' for part in event.content.parts]
       )
       if self.output_schema:
+        # If the result from the final chunk is just whitespace or empty,
+        # it means this is an empty final chunk of a stream.
+        # Do not attempt to parse it as JSON.
+        if not result.strip():
+          return
         result = self.output_schema.model_validate_json(result).model_dump(
             exclude_none=True
         )
