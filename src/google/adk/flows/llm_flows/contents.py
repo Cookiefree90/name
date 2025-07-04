@@ -50,6 +50,14 @@ class _ContentLlmRequestProcessor(BaseLlmRequestProcessor):
           invocation_context.session.events,
           agent.name,
       )
+    elif agent.include_contents == 'windowed':
+      llm_request.contents = _get_windowed_turn_contents(
+      ## Includes windowed turn contexts (windowed conversation history)
+      invocation_context.branch,
+      invocation_context.session.events,
+      agent.name,
+      history_window=agent.history_window_size
+      )
     else:
       # Include current turn context only (no conversation history)
       llm_request.contents = _get_current_turn_contents(
@@ -281,6 +289,39 @@ def _get_current_turn_contents(
       return _get_contents(current_branch, events[i:], agent_name)
 
   return []
+
+def _get_windowed_turn_contents(
+    current_branch: Optional[str],
+    events: list[Event],
+    agent_name: str = '',
+    history_window: int = 5  # New argument
+) -> list[types.Content]:
+    """Get contents for the current turn, optionally with limited conversation history.
+
+    Args:
+      current_branch: The current branch of the agent.
+      events: A list of all session events.
+      agent_name: The name of the agent.
+      history_window: Number of previous contents to include from conversation history.
+
+    Returns:
+      A list of contents for the current turn and optional recent history.
+    """
+    # Find the start of the current turn
+    turn_start_index = 0
+    for i in range(len(events) - 1, -1, -1):
+        event = events[i]
+        if event.author == 'user' or _is_other_agent_reply(agent_name, event):
+            turn_start_index = i
+            break
+
+    # Determine the starting index for history window
+    if history_window > 0:
+        history_start_index = max(0, turn_start_index - history_window)
+    else:
+        history_start_index = turn_start_index
+
+    return _get_contents(current_branch, events[history_start_index:], agent_name)
 
 
 def _is_other_agent_reply(current_agent_name: str, event: Event) -> bool:
