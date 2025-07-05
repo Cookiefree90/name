@@ -129,3 +129,4 @@ class TestLangGraphContextManager:
         assert merged["other_ref"] == "other-ref-1"  # Left reference preserved
         assert merged["counter"] == 2  # Right value used
         assert merged["messages"] == ["First message"]  # Left value preserved
+ 

@@ -19,10 +19,9 @@ import time
 import pytest
 from typing import Dict, Any
 
-# Force the importing of conftest.py which sets up our mock modules
+
 from . import conftest
 
-# Now import the modules we want to test
 from google.adk.sessions.context_reference_store import (
     ContextReferenceStore,
     ContextMetadata,
@@ -41,11 +40,11 @@ class TestContextReferenceStore:
         )  # This is not large, but sufficient for testing
         context_id = store.store(content)
 
-        # Verify content can be retrieved
+        # Verification
         retrieved = store.retrieve(context_id)
         assert content == retrieved
 
-        # Verify metadata is created
+        # Metadata
         metadata = store.get_metadata(context_id)
         assert isinstance(metadata, ContextMetadata)
         assert metadata.content_type == "text/plain"
@@ -63,11 +62,11 @@ class TestContextReferenceStore:
         }
         context_id = store.store(content)
 
-        # Verify content can be retrieved
+        # Verification
         retrieved = store.retrieve(context_id)
         assert content == retrieved
 
-        # Verify metadata is created
+        # Metadata
         metadata = store.get_metadata(context_id)
         assert isinstance(metadata, ContextMetadata)
         assert metadata.content_type == "application/json"
@@ -110,7 +109,7 @@ class TestContextReferenceStore:
 
         # Store 3 different items, which should evict the first one
         id1 = store.store("Content 1")
-        time.sleep(0.01)  # Ensure different access times
+        time.sleep(0.01)  # Different access times
         id2 = store.store("Content 2")
         time.sleep(0.01)
         id3 = store.store("Content 3")
@@ -148,14 +147,11 @@ class TestLargeContextState:
         state = LargeContextState()
         content = {"key": "value", "nested": {"subkey": "subvalue"}}
 
-        # Add structured context
+        # Store structured context
         ref_id = state.store_structured_context(content)
 
-        # Verify reference is stored in state
         assert "structured_context_ref" in state
         assert state["structured_context_ref"] == ref_id
-
-        # Retrieve context
         retrieved = state.get_context("structured_context_ref")
         assert content == retrieved
 
@@ -184,3 +180,4 @@ class TestLargeContextState:
         # Attempt to retrieve non-existent context
         with pytest.raises(KeyError):
             state.get_context("nonexistent_ref")
+ 
