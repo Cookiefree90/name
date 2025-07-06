@@ -196,6 +196,7 @@ def get_fast_api_app(
     *,
     agents_dir: str,
     session_service_uri: Optional[str] = None,
+    session_service_db_kwargs: Optional[dict[str, Any]] = None,
     artifact_service_uri: Optional[str] = None,
     memory_service_uri: Optional[str] = None,
     eval_storage_uri: Optional[str] = None,
@@ -314,7 +315,9 @@ def get_fast_api_app(
           agent_engine_id=agent_engine_id,
       )
     else:
-      session_service = DatabaseSessionService(db_url=session_service_uri)
+      session_service = DatabaseSessionService(
+          db_url=session_service_uri, **(session_service_db_kwargs or {})
+      )
   else:
     session_service = InMemorySessionService()
 
