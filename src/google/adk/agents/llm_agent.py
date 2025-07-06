@@ -26,6 +26,7 @@ from typing import Literal
 from typing import Optional
 from typing import Type
 from typing import Union
+from typing import Sequence
 
 from google.genai import types
 from pydantic import BaseModel
@@ -141,7 +142,7 @@ class LlmAgent(BaseAgent):
   or personality.
   """
 
-  tools: list[ToolUnion] = Field(default_factory=list)
+  tools: Sequence[ToolUnion] = Field(default_factory=list)
   """Tools available to this agent."""
 
   generate_content_config: Optional[types.GenerateContentConfig] = None
