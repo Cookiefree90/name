@@ -19,9 +19,10 @@ This module provides utilities for integrating ADK's context management with Lan
 It focuses on making it easy to use efficient context reference storage with LangGraph state.
 """
 
-from typing import Dict, Any, Optional, TypeVar, List, Callable
+from typing import Dict, Any, Optional, TypeVar, List, Callable, TYPE_CHECKING
 
-from google.adk.sessions.context_reference_store import ContextReferenceStore
+if TYPE_CHECKING:
+    from google.adk.sessions.context_reference_store import ContextReferenceStore
 
 
 StateType = TypeVar("StateType", bound=Dict[str, Any])
@@ -34,13 +35,19 @@ class LangGraphContextManager:
     Provides methods to integrate ADK's context reference store with LangGraph state.
     """
 
-    def __init__(self, context_store: Optional[ContextReferenceStore] = None):
+    def __init__(self, context_store: Optional["ContextReferenceStore"] = None):
         """
 
         Args:
             context_store: Context reference store to use
         """
-        self._context_store = context_store or ContextReferenceStore()
+        if context_store is None:
+            from google.adk.sessions.context_reference_store import (
+                ContextReferenceStore,
+            )
+
+            context_store = ContextReferenceStore()
+        self._context_store = context_store
 
     def add_to_state(
         self,
@@ -92,7 +99,7 @@ class LangGraphContextManager:
 
 
 def create_reference_aware_merge(
-    context_store: Optional[ContextReferenceStore] = None,
+    context_store: Optional["ContextReferenceStore"] = None,
 ) -> Callable[[StateType, StateType], StateType]:
     """
     Create a merge function for LangGraph that's aware of context references.
@@ -106,7 +113,11 @@ def create_reference_aware_merge(
     Returns:
         A merge function that can be used with LangGraph's StateGraph
     """
-    store = context_store or ContextReferenceStore()
+    if context_store is None:
+        from google.adk.sessions.context_reference_store import ContextReferenceStore
+
+        context_store = ContextReferenceStore()
+    store = context_store
 
     def reference_aware_merge(left: StateType, right: StateType) -> StateType:
         """
