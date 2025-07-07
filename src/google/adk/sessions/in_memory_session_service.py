@@ -39,7 +39,7 @@ class InMemorySessionService(BaseSessionService):
   testing and development only.
   """
 
-  def __init__(self):
+  def __init__(self) -> None:
     # A map from app name to a map from user ID to a map from session ID to
     # session.
     self.sessions: dict[str, dict[str, dict[str, Session]]] = {}
