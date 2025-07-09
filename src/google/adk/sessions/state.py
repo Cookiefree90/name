@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from typing import Any
+
 _sentinel = object()
+
 
 class State:
   """A state dict that maintain the current value and the pending-commit delta."""
