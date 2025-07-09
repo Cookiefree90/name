@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from typing import Any
-
+_sentinel = object()
 
 class State:
   """A state dict that maintain the current value and the pending-commit delta."""
@@ -37,6 +37,15 @@ class State:
       return self._delta[key]
     return self._value[key]
 
+  def __delitem__(self, key: str):
+    """Deletes the value of the state dict for the given key"""
+    if key not in self:
+      raise KeyError(key)
+    if key in self._delta:
+      del self._delta[key]
+    if key in self._value:
+      del self._value[key]
+
   def __setitem__(self, key: str, value: Any):
     """Sets the value of the state dict for the given key."""
     # TODO: make new change only store in delta, so that self._value is only
@@ -57,6 +66,18 @@ class State:
     if key not in self:
       return default
     return self[key]
+
+  def pop(self, key: str, default: Any = _sentinel) -> Any:
+    """Deletes the value of the state dict for the given key"""
+    if key in self:
+      value_to_return = self[key]
+      del self[key]
+      return value_to_return
+    else:
+      if default is not _sentinel:
+        return default
+      else:
+        raise KeyError(key)
 
   def update(self, delta: dict[str, Any]):
     """Updates the state dict with the given delta."""
