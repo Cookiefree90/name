@@ -20,6 +20,7 @@ import sys
 from typing import Optional
 
 from . import envs
+from ...agents.agent_factory import AgentFactory
 from ...agents.base_agent import BaseAgent
 
 logger = logging.getLogger("google_adk." + __name__)
@@ -128,6 +129,12 @@ class AgentLoader:
 
     return None
 
+  def _load_from_yaml(self, agent_name: str) -> BaseAgent:
+    # The path is for illustrative purposes only. We should decide what the yaml
+    # file requirements are.
+    relative_path = agent_name + "/root_agent.yaml"
+    return AgentFactory.from_config(relative_path)
+
   def _perform_load(self, agent_name: str) -> BaseAgent:
     """Internal logic to load an agent"""
     # Add self.agents_dir to sys.path
@@ -143,6 +150,9 @@ class AgentLoader:
       return root_agent
 
     if root_agent := self._load_from_submodule(agent_name):
+      return root_agent
+
+    if root_agent := self._load_from_yaml(agent_name):
       return root_agent
 
     # If no root_agent was found by any pattern
