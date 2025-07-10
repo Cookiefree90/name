@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from abc import ABC
 import asyncio
+import datetime
 import inspect
 import logging
 from typing import AsyncGenerator
@@ -282,14 +283,10 @@ class BaseLlmFlow(ABC):
       async for event in self._run_one_step_async(invocation_context):
         last_event = event
         yield event
-      if not last_event or last_event.is_final_response():
+      if not last_event or last_event.is_final_response() or last_event.partial:
+        if last_event and last_event.partial:
+          logger.warning('The last event is partial, which is not expected.')
         break
-      if last_event.partial:
-        # TODO: handle this in BaseLlm level.
-        raise ValueError(
-            f"Last event shouldn't be partial. LLM max output limit may be"
-            f' reached.'
-        )
 
   async def _run_one_step_async(
       self,
@@ -320,6 +317,7 @@ class BaseLlmFlow(ABC):
       ):
         # Update the mutable event id to avoid conflict
         model_response_event.id = Event.new_id()
+        model_response_event.timestamp = datetime.datetime.now().timestamp()
         yield event
 
   async def _preprocess_async(
