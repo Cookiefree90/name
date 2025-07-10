@@ -12,23 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .agent_factory import AgentFactory
-from .base_agent import BaseAgent
-from .live_request_queue import LiveRequest
-from .live_request_queue import LiveRequestQueue
-from .llm_agent import Agent
-from .llm_agent import LlmAgent
-from .loop_agent import LoopAgent
-from .parallel_agent import ParallelAgent
-from .run_config import RunConfig
-from .sequential_agent import SequentialAgent
+from __future__ import annotations
 
-__all__ = [
-    'Agent',
-    'AgentFactory',
-    'BaseAgent',
-    'LlmAgent',
-    'LoopAgent',
-    'ParallelAgent',
-    'SequentialAgent',
-]
+from typing import List
+from typing import Literal
+from typing import Optional
+
+from .base_agent_config import BaseAgentConfig
+from .common_config import ArgumentConfig
+
+
+# This is essentially a CodeConfig, maybe using CodeConfig is sufficient.
+class CustomAgentConfig(BaseAgentConfig):
+
+  agent_type: Literal['CustomAgent'] = 'CustomAgent'
+
+  path: str
+
+  args: Optional[List[ArgumentConfig]] = None

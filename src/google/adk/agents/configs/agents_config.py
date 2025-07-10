@@ -12,23 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .agent_factory import AgentFactory
-from .base_agent import BaseAgent
-from .live_request_queue import LiveRequest
-from .live_request_queue import LiveRequestQueue
-from .llm_agent import Agent
-from .llm_agent import LlmAgent
-from .loop_agent import LoopAgent
-from .parallel_agent import ParallelAgent
-from .run_config import RunConfig
-from .sequential_agent import SequentialAgent
+from __future__ import annotations
 
-__all__ = [
-    'Agent',
-    'AgentFactory',
-    'BaseAgent',
-    'LlmAgent',
-    'LoopAgent',
-    'ParallelAgent',
-    'SequentialAgent',
-]
+from typing import List
+from typing import Union
+
+from pydantic import BaseModel
+from pydantic import ConfigDict
+from pydantic import Field
+
+from .custom_agent_config import CustomAgentConfig
+from .llm_agent_config import LlmAgentConfig
+from .loop_agent_config import LoopAgentConfig
+
+AgentConfig = Union[LlmAgentConfig, CustomAgentConfig, LoopAgentConfig]
+
+
+class AgentsConfig(BaseModel):
+  model_config = ConfigDict(extra="forbid")
+
+  agents: List[AgentConfig]
