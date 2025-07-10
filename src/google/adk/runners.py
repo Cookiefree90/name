@@ -17,7 +17,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import queue
-import threading
 from typing import AsyncGenerator
 from typing import Generator
 from typing import Optional
@@ -34,10 +33,13 @@ from .agents.llm_agent import LlmAgent
 from .agents.run_config import RunConfig
 from .artifacts.base_artifact_service import BaseArtifactService
 from .artifacts.in_memory_artifact_service import InMemoryArtifactService
+from .auth.credential_service.base_credential_service import BaseCredentialService
 from .code_executors.built_in_code_executor import BuiltInCodeExecutor
 from .events.event import Event
+from .flows.llm_flows.functions import find_matching_function_call
 from .memory.base_memory_service import BaseMemoryService
 from .memory.in_memory_memory_service import InMemoryMemoryService
+from .platform.thread import create_thread
 from .sessions.base_session_service import BaseSessionService
 from .sessions.in_memory_session_service import InMemorySessionService
 from .sessions.session import Session
@@ -72,6 +74,8 @@ class Runner:
   """The session service for the runner."""
   memory_service: Optional[BaseMemoryService] = None
   """The memory service for the runner."""
+  credential_service: Optional[BaseCredentialService] = None
+  """The credential service for the runner."""
 
   def __init__(
       self,
@@ -81,6 +85,7 @@ class Runner:
       artifact_service: Optional[BaseArtifactService] = None,
       session_service: BaseSessionService,
       memory_service: Optional[BaseMemoryService] = None,
+      credential_service: Optional[BaseCredentialService] = None,
   ):
     """Initializes the Runner.
 
@@ -96,6 +101,7 @@ class Runner:
     self.artifact_service = artifact_service
     self.session_service = session_service
     self.memory_service = memory_service
+    self.credential_service = credential_service
 
   def run(
       self,
@@ -139,7 +145,7 @@ class Runner:
       finally:
         event_queue.put(None)
 
-    thread = threading.Thread(target=_asyncio_thread_main)
+    thread = create_thread(target=_asyncio_thread_main)
     thread.start()
 
     # consumes and re-yield the events from background thread.
@@ -301,27 +307,44 @@ class Runner:
     root_agent = self.agent
     invocation_context.agent = self._find_agent_to_run(session, root_agent)
 
+    # Pre-processing for live streaming tools
+    # Inspect the tool's parameters to find if it uses LiveRequestQueue
     invocation_context.active_streaming_tools = {}
     # TODO(hangfei): switch to use canonical_tools.
     # for shell agents, there is no tools associated with it so we should skip.
     if hasattr(invocation_context.agent, 'tools'):
-      for tool in invocation_context.agent.tools:
-        # replicate a LiveRequestQueue for streaming tools that relis on
-        # LiveRequestQueue
-        from typing import get_type_hints
+      import inspect
 
-        type_hints = get_type_hints(tool)
-        for arg_type in type_hints.values():
-          if arg_type is LiveRequestQueue:
+      for tool in invocation_context.agent.tools:
+        # We use `inspect.signature()` to examine the tool's underlying function (`tool.func`).
+        # This approach is deliberately chosen over `typing.get_type_hints()` for robustness.
+        #
+        # The Problem with `get_type_hints()`:
+        # `get_type_hints()` attempts to resolve forward-referenced (string-based) type
+        # annotations. This resolution can easily fail with a `NameError` (e.g., "Union not found")
+        # if the type isn't available in the scope where `get_type_hints()` is called.
+        # This is a common and brittle issue in framework code that inspects functions
+        # defined in separate user modules.
+        #
+        # Why `inspect.signature()` is Better Here:
+        # `inspect.signature()` does NOT resolve the annotations; it retrieves the raw
+        # annotation object as it was defined on the function. This allows us to
+        # perform a direct and reliable identity check (`param.annotation is LiveRequestQueue`)
+        # without risking a `NameError`.
+        callable_to_inspect = tool.func if hasattr(tool, 'func') else tool
+        # Ensure the target is actually callable before inspecting to avoid errors.
+        if not callable(callable_to_inspect):
+          continue
+        for param in inspect.signature(callable_to_inspect).parameters.values():
+          if param.annotation is LiveRequestQueue:
             if not invocation_context.active_streaming_tools:
               invocation_context.active_streaming_tools = {}
-            active_streaming_tools = ActiveStreamingTool(
+            active_streaming_tool = ActiveStreamingTool(
                 stream=LiveRequestQueue()
             )
             invocation_context.active_streaming_tools[tool.__name__] = (
-                active_streaming_tools
+                active_streaming_tool
             )
-
     async for event in invocation_context.agent.run_live(invocation_context):
       await self.session_service.append_event(session=session, event=event)
       yield event
@@ -332,6 +355,8 @@ class Runner:
     """Finds the agent to run to continue the session.
 
     A qualified agent must be either of:
+    - The agent that returned a function call and the last user message is a
+      function response to this function call.
     - The root agent;
     - An LlmAgent who replied last and is capable to transfer to any other agent
       in the agent hierarchy.
@@ -343,6 +368,13 @@ class Runner:
     Returns:
       The agent of the last message in the session or the root agent.
     """
+    # If the last event is a function response, should send this response to
+    # the agent that returned the corressponding function call regardless the
+    # type of the agent. e.g. a remote a2a agent may surface a credential
+    # request as a special long running function tool call.
+    event = find_matching_function_call(session.events)
+    if event and event.author:
+      return root_agent.find_agent(event.author)
     for event in filter(lambda e: e.author != 'user', reversed(session.events)):
       if event.author == root_agent.name:
         # Found root agent.
@@ -417,6 +449,7 @@ class Runner:
         artifact_service=self.artifact_service,
         session_service=self.session_service,
         memory_service=self.memory_service,
+        credential_service=self.credential_service,
         invocation_id=invocation_id,
         agent=self.agent,
         session=session,
