@@ -24,20 +24,31 @@ from typing import Callable
 from typing import Optional
 import uuid
 
-from a2a.server.agent_execution import AgentExecutor
-from a2a.server.agent_execution.context import RequestContext
-from a2a.server.events.event_queue import EventQueue
-from a2a.types import Message
-from a2a.types import Role
-from a2a.types import TaskState
-from a2a.types import TaskStatus
-from a2a.types import TaskStatusUpdateEvent
-from a2a.types import TextPart
+try:
+  from a2a.server.agent_execution import AgentExecutor
+  from a2a.server.agent_execution.context import RequestContext
+  from a2a.server.events.event_queue import EventQueue
+  from a2a.types import Message
+  from a2a.types import Role
+  from a2a.types import TaskState
+  from a2a.types import TaskStatus
+  from a2a.types import TaskStatusUpdateEvent
+  from a2a.types import TextPart
+
+except ImportError as e:
+  import sys
+
+  if sys.version_info < (3, 10):
+    raise ImportError(
+        'A2A requires Python 3.10 or above. Please upgrade your Python version.'
+    ) from e
+  else:
+    raise e
 from google.adk.runners import Runner
 from pydantic import BaseModel
 from typing_extensions import override
 
-from ...utils.feature_decorator import working_in_progress
+from ...utils.feature_decorator import experimental
 from ..converters.event_converter import convert_event_to_a2a_events
 from ..converters.request_converter import convert_a2a_request_to_adk_run_args
 from ..converters.utils import _get_adk_metadata_key
@@ -46,14 +57,14 @@ from .task_result_aggregator import TaskResultAggregator
 logger = logging.getLogger('google_adk.' + __name__)
 
 
-@working_in_progress
+@experimental
 class A2aAgentExecutorConfig(BaseModel):
   """Configuration for the A2aAgentExecutor."""
 
   pass
 
 
-@working_in_progress
+@experimental
 class A2aAgentExecutor(AgentExecutor):
   """An AgentExecutor that runs an ADK Agent against an A2A request and
   publishes updates to an event queue.
