@@ -24,7 +24,6 @@ from .auth_schemes import AuthSchemeType
 from .auth_tool import AuthConfig
 from .exchanger.base_credential_exchanger import BaseCredentialExchanger
 from .exchanger.credential_exchanger_registry import CredentialExchangerRegistry
-from .refresher.base_credential_refresher import BaseCredentialRefresher
 from .refresher.credential_refresher_registry import CredentialRefresherRegistry
 
 
@@ -134,12 +133,15 @@ class CredentialManager:
     credential, was_exchanged = await self._exchange_credential(credential)
 
     # Step 7: Refresh credential if expired
+    was_refreshed = False
     if not was_exchanged:
       credential, was_refreshed = await self._refresh_credential(credential)
 
     # Step 8: Save credential if it was modified
     if was_from_auth_response or was_exchanged or was_refreshed:
-      await self._save_credential(tool_context, credential)
+      # Update the exchanged credential in config
+      self._auth_config.exchanged_auth_credential = credential
+      await tool_context.save_credential(self._auth_config, tool_context)
 
     return credential
 
@@ -149,7 +151,9 @@ class CredentialManager:
     """Load existing credential from credential service or cached exchanged credential."""
 
     # Try loading from credential service first
-    credential = await self._load_from_credential_service(tool_context)
+    credential = await tool_context.load_credential(
+        self._auth_config, tool_context
+    )
     if credential:
       return credential
 
@@ -157,19 +161,6 @@ class CredentialManager:
     if self._auth_config.exchanged_auth_credential:
       return self._auth_config.exchanged_auth_credential
 
-    return None
-
-  async def _load_from_credential_service(
-      self, tool_context: ToolContext
-  ) -> Optional[AuthCredential]:
-    """Load credential from credential service if available."""
-    credential_service = tool_context._invocation_context.credential_service
-    if credential_service:
-      # Note: This should be made async in a future refactor
-      # For now, assuming synchronous operation
-      return await credential_service.load_credential(
-          self._auth_config, tool_context
-      )
     return None
 
   async def _load_from_auth_response(
@@ -249,13 +240,3 @@ class CredentialManager:
             f"{raw_credential.auth_type}"
         )
         # Additional validation can be added here
-
-  async def _save_credential(
-      self, tool_context: ToolContext, credential: AuthCredential
-  ) -> None:
-    """Save credential to credential service if available."""
-    credential_service = tool_context._invocation_context.credential_service
-    if credential_service:
-      # Update the exchanged credential in config
-      self._auth_config.exchanged_auth_credential = credential
-      await credential_service.save_credential(self._auth_config, tool_context)

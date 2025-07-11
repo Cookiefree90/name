@@ -68,6 +68,7 @@ class TestCredentialManager:
     mock_credential.auth_type = AuthCredentialTypes.API_KEY
 
     tool_context = Mock()
+    tool_context.save_credential = AsyncMock()
 
     manager = CredentialManager(auth_config)
 
@@ -82,7 +83,6 @@ class TestCredentialManager:
     manager._refresh_credential = AsyncMock(
         return_value=(mock_credential, False)
     )
-    manager._save_credential = AsyncMock()
 
     result = await manager.get_auth_credential(tool_context)
 
@@ -93,8 +93,8 @@ class TestCredentialManager:
     manager._load_from_auth_response.assert_called_once_with(tool_context)
     manager._exchange_credential.assert_called_once_with(mock_credential)
     manager._refresh_credential.assert_called_once_with(mock_credential)
-    manager._save_credential.assert_called_once_with(
-        tool_context, mock_credential
+    tool_context.save_credential.assert_called_once_with(
+        auth_config, tool_context
     )
 
     assert result == mock_credential
@@ -107,6 +107,7 @@ class TestCredentialManager:
     auth_config.exchanged_auth_credential = None
 
     tool_context = Mock()
+    tool_context.save_credential = AsyncMock()
 
     manager = CredentialManager(auth_config)
 
@@ -117,7 +118,6 @@ class TestCredentialManager:
     manager._load_from_auth_response = AsyncMock(return_value=None)
     manager._exchange_credential = AsyncMock()
     manager._refresh_credential = AsyncMock()
-    manager._save_credential = AsyncMock()
 
     result = await manager.get_auth_credential(tool_context)
 
@@ -128,7 +128,7 @@ class TestCredentialManager:
     manager._load_from_auth_response.assert_called_once_with(tool_context)
     manager._exchange_credential.assert_not_called()
     manager._refresh_credential.assert_not_called()
-    manager._save_credential.assert_not_called()
+    tool_context.save_credential.assert_not_called()
 
     assert result is None
 
@@ -140,9 +140,9 @@ class TestCredentialManager:
     auth_config.exchanged_auth_credential = mock_credential
 
     tool_context = Mock()
+    tool_context.load_credential = AsyncMock(return_value=None)
 
     manager = CredentialManager(auth_config)
-    manager._load_from_credential_service = AsyncMock(return_value=None)
 
     result = await manager._load_existing_credential(tool_context)
 
@@ -157,104 +157,16 @@ class TestCredentialManager:
     mock_credential = Mock(spec=AuthCredential)
 
     tool_context = Mock()
+    tool_context.load_credential = AsyncMock(return_value=mock_credential)
 
     manager = CredentialManager(auth_config)
-    manager._load_from_credential_service = AsyncMock(
-        return_value=mock_credential
-    )
 
     result = await manager._load_existing_credential(tool_context)
 
-    manager._load_from_credential_service.assert_called_once_with(tool_context)
-    assert result == mock_credential
-
-  @pytest.mark.asyncio
-  async def test_load_from_credential_service_with_service(self):
-    """Test _load_from_credential_service from tool context when credential service is available."""
-    auth_config = Mock(spec=AuthConfig)
-
-    mock_credential = Mock(spec=AuthCredential)
-
-    # Mock credential service
-    credential_service = Mock()
-    credential_service.load_credential = AsyncMock(return_value=mock_credential)
-
-    # Mock invocation context
-    invocation_context = Mock()
-    invocation_context.credential_service = credential_service
-
-    tool_context = Mock()
-    tool_context._invocation_context = invocation_context
-
-    manager = CredentialManager(auth_config)
-    result = await manager._load_from_credential_service(tool_context)
-
-    credential_service.load_credential.assert_called_once_with(
+    tool_context.load_credential.assert_called_once_with(
         auth_config, tool_context
     )
     assert result == mock_credential
-
-  @pytest.mark.asyncio
-  async def test_load_from_credential_service_no_service(self):
-    """Test _load_from_credential_service when no credential service is available."""
-    auth_config = Mock(spec=AuthConfig)
-
-    # Mock invocation context with no credential service
-    invocation_context = Mock()
-    invocation_context.credential_service = None
-
-    tool_context = Mock()
-    tool_context._invocation_context = invocation_context
-
-    manager = CredentialManager(auth_config)
-    result = await manager._load_from_credential_service(tool_context)
-
-    assert result is None
-
-  @pytest.mark.asyncio
-  async def test_save_credential_with_service(self):
-    """Test _save_credential with credential service."""
-    auth_config = Mock(spec=AuthConfig)
-    mock_credential = Mock(spec=AuthCredential)
-
-    # Mock credential service
-    credential_service = AsyncMock()
-
-    # Mock invocation context
-    invocation_context = Mock()
-    invocation_context.credential_service = credential_service
-
-    tool_context = Mock()
-    tool_context._invocation_context = invocation_context
-
-    manager = CredentialManager(auth_config)
-    await manager._save_credential(tool_context, mock_credential)
-
-    credential_service.save_credential.assert_called_once_with(
-        auth_config, tool_context
-    )
-    assert auth_config.exchanged_auth_credential == mock_credential
-
-  @pytest.mark.asyncio
-  async def test_save_credential_no_service(self):
-    """Test _save_credential when no credential service is available."""
-    auth_config = Mock(spec=AuthConfig)
-    auth_config.exchanged_auth_credential = None
-    mock_credential = Mock(spec=AuthCredential)
-
-    # Mock invocation context with no credential service
-    invocation_context = Mock()
-    invocation_context.credential_service = None
-
-    tool_context = Mock()
-    tool_context._invocation_context = invocation_context
-
-    manager = CredentialManager(auth_config)
-    await manager._save_credential(tool_context, mock_credential)
-
-    # Should not raise an error, and credential should not be set in auth_config
-    # when there's no credential service (according to implementation)
-    assert auth_config.exchanged_auth_credential is None
 
   @pytest.mark.asyncio
   async def test_refresh_credential_oauth2(self):
