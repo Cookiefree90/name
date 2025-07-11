@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import logging
 import os
 from pathlib import Path
@@ -32,7 +33,6 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -49,11 +49,12 @@ from pydantic import Field
 from pydantic import ValidationError
 from starlette.types import Lifespan
 from typing_extensions import override
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
 
 from ..agents import RunConfig
 from ..agents.live_request_queue import LiveRequest
 from ..agents.live_request_queue import LiveRequestQueue
-from ..agents.llm_agent import Agent
 from ..agents.run_config import StreamingMode
 from ..artifacts.gcs_artifact_service import GcsArtifactService
 from ..artifacts.in_memory_artifact_service import InMemoryArtifactService
@@ -65,12 +66,11 @@ from ..evaluation.eval_metrics import EvalMetric
 from ..evaluation.eval_metrics import EvalMetricResult
 from ..evaluation.eval_metrics import EvalMetricResultPerInvocation
 from ..evaluation.eval_result import EvalSetResult
-from ..evaluation.gcs_eval_set_results_manager import GcsEvalSetResultsManager
-from ..evaluation.gcs_eval_sets_manager import GcsEvalSetsManager
 from ..evaluation.local_eval_set_results_manager import LocalEvalSetResultsManager
 from ..evaluation.local_eval_sets_manager import LocalEvalSetsManager
 from ..events.event import Event
 from ..memory.in_memory_memory_service import InMemoryMemoryService
+from ..memory.vertex_ai_memory_bank_service import VertexAiMemoryBankService
 from ..memory.vertex_ai_rag_memory_service import VertexAiRagMemoryService
 from ..runners import Runner
 from ..sessions.database_session_service import DatabaseSessionService
@@ -89,6 +89,21 @@ from .utils.agent_loader import AgentLoader
 logger = logging.getLogger("google_adk." + __name__)
 
 _EVAL_SET_FILE_EXTENSION = ".evalset.json"
+_app_name = ""
+_runners_to_clean = set()
+
+
+class AgentChangeEventHandler(FileSystemEventHandler):
+
+  def __init__(self, agent_loader: AgentLoader):
+    self.agent_loader = agent_loader
+
+  def on_modified(self, event):
+    if not (event.src_path.endswith(".py") or event.src_path.endswith(".yaml")):
+      return
+    logger.info("Change detected in agents directory: %s", event.src_path)
+    self.agent_loader.remove_agent_from_cache(_app_name)
+    _runners_to_clean.add(_app_name)
 
 
 class ApiServerSpanExporter(export.SpanExporter):
@@ -203,7 +218,11 @@ def get_fast_api_app(
     eval_storage_uri: Optional[str] = None,
     allow_origins: Optional[list[str]] = None,
     web: bool,
+    a2a: bool = False,
+    host: str = "127.0.0.1",
+    port: int = 8000,
     trace_to_cloud: bool = False,
+    reload_agents: bool = False,
     lifespan: Optional[Lifespan[FastAPI]] = None,
 ) -> FastAPI:
   # InMemory tracing dict.
@@ -234,7 +253,6 @@ def get_fast_api_app(
 
   @asynccontextmanager
   async def internal_lifespan(app: FastAPI):
-
     try:
       if lifespan:
         async with lifespan(app) as lifespan_context:
@@ -242,6 +260,9 @@ def get_fast_api_app(
       else:
         yield
     finally:
+      if reload_agents:
+        observer.stop()
+        observer.join()
       # Create tasks for all runner closures to run concurrently
       await cleanup.close_runners(list(runner_dict.values()))
 
@@ -281,6 +302,16 @@ def get_fast_api_app(
       envs.load_dotenv_for_agent("", agents_dir)
       memory_service = VertexAiRagMemoryService(
           rag_corpus=f'projects/{os.environ["GOOGLE_CLOUD_PROJECT"]}/locations/{os.environ["GOOGLE_CLOUD_LOCATION"]}/ragCorpora/{rag_corpus}'
+      )
+    elif memory_service_uri.startswith("agentengine://"):
+      agent_engine_id = memory_service_uri.split("://")[1]
+      if not agent_engine_id:
+        raise click.ClickException("Agent engine id can not be empty.")
+      envs.load_dotenv_for_agent("", agents_dir)
+      memory_service = VertexAiMemoryBankService(
+          project=os.environ["GOOGLE_CLOUD_PROJECT"],
+          location=os.environ["GOOGLE_CLOUD_LOCATION"],
+          agent_engine_id=agent_engine_id,
       )
     else:
       raise click.ClickException(
@@ -324,6 +355,13 @@ def get_fast_api_app(
 
   # initialize Agent Loader
   agent_loader = AgentLoader(agents_dir)
+
+  # Set up a file system watcher to detect changes in the agents directory.
+  observer = Observer()
+  if reload_agents:
+    event_handler = AgentChangeEventHandler(agent_loader)
+    observer.schedule(event_handler, agents_dir, recursive=True)
+    observer.start()
 
   @app.get("/list-apps")
   def list_apps() -> list[str]:
@@ -379,6 +417,9 @@ def get_fast_api_app(
     )
     if not session:
       raise HTTPException(status_code=404, detail="Session not found")
+
+    global _app_name
+    _app_name = app_name
     return session
 
   @app.get(
@@ -936,6 +977,11 @@ def get_fast_api_app(
 
   async def _get_runner_async(app_name: str) -> Runner:
     """Returns the runner for the given app."""
+    if app_name in _runners_to_clean:
+      _runners_to_clean.remove(app_name)
+      runner = runner_dict.pop(app_name, None)
+      await cleanup.close_runners(list([runner]))
+
     envs.load_dotenv_for_agent(os.path.basename(app_name), agents_dir)
     if app_name in runner_dict:
       return runner_dict[app_name]
@@ -951,6 +997,86 @@ def get_fast_api_app(
     runner_dict[app_name] = runner
     return runner
 
+  if a2a:
+    try:
+      from a2a.server.apps import A2AStarletteApplication
+      from a2a.server.request_handlers import DefaultRequestHandler
+      from a2a.server.tasks import InMemoryTaskStore
+      from a2a.types import AgentCard
+
+      from ..a2a.executor.a2a_agent_executor import A2aAgentExecutor
+
+    except ImportError as e:
+      import sys
+
+      if sys.version_info < (3, 10):
+        raise ImportError(
+            "A2A requires Python 3.10 or above. Please upgrade your Python"
+            " version."
+        ) from e
+      else:
+        raise e
+    # locate all a2a agent apps in the agents directory
+    base_path = Path.cwd() / agents_dir
+    # the root agents directory should be an existing folder
+    if base_path.exists() and base_path.is_dir():
+      a2a_task_store = InMemoryTaskStore()
+
+      def create_a2a_runner_loader(captured_app_name: str):
+        """Factory function to create A2A runner with proper closure."""
+
+        async def _get_a2a_runner_async() -> Runner:
+          return await _get_runner_async(captured_app_name)
+
+        return _get_a2a_runner_async
+
+      for p in base_path.iterdir():
+        # only folders with an agent.json file representing agent card are valid
+        # a2a agents
+        if (
+            p.is_file()
+            or p.name.startswith((".", "__pycache__"))
+            or not (p / "agent.json").is_file()
+        ):
+          continue
+
+        app_name = p.name
+        logger.info("Setting up A2A agent: %s", app_name)
+
+        try:
+          a2a_rpc_path = f"http://{host}:{port}/a2a/{app_name}"
+
+          agent_executor = A2aAgentExecutor(
+              runner=create_a2a_runner_loader(app_name),
+          )
+
+          request_handler = DefaultRequestHandler(
+              agent_executor=agent_executor, task_store=a2a_task_store
+          )
+
+          with (p / "agent.json").open("r", encoding="utf-8") as f:
+            data = json.load(f)
+            agent_card = AgentCard(**data)
+            agent_card.url = a2a_rpc_path
+
+          a2a_app = A2AStarletteApplication(
+              agent_card=agent_card,
+              http_handler=request_handler,
+          )
+
+          routes = a2a_app.routes(
+              rpc_url=f"/a2a/{app_name}",
+              agent_card_url=f"/a2a/{app_name}/.well-known/agent.json",
+          )
+
+          for new_route in routes:
+            app.router.routes.append(new_route)
+
+          logger.info("Successfully configured A2A agent: %s", app_name)
+
+        except Exception as e:
+          logger.error("Failed to setup A2A agent %s: %s", app_name, e)
+          # Continue with other agents even if one fails
   if web:
     import mimetypes
 
