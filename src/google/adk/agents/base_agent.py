@@ -19,9 +19,12 @@ from typing import Any
 from typing import AsyncGenerator
 from typing import Awaitable
 from typing import Callable
+from typing import Dict
 from typing import final
+from typing import Literal
 from typing import Mapping
 from typing import Optional
+from typing import Type
 from typing import TYPE_CHECKING
 from typing import TypeVar
 from typing import Union
@@ -36,6 +39,7 @@ from typing_extensions import override
 from typing_extensions import TypeAlias
 
 from ..events.event import Event
+from ..utils.feature_decorator import working_in_progress
 from .callback_context import CallbackContext
 
 if TYPE_CHECKING:
@@ -223,9 +227,16 @@ class BaseAgent(BaseModel):
     """
     with tracer.start_as_current_span(f'agent_run [{self.name}]'):
       ctx = self._create_invocation_context(parent_context)
-      # TODO(hangfei): support before/after_agent_callback
+
+      if event := await self.__handle_before_agent_callback(ctx):
+        yield event
+      if ctx.end_invocation:
+        return
 
       async for event in self._run_live_impl(ctx):
+        yield event
+
+      if event := await self.__handle_after_agent_callback(ctx):
         yield event
 
   async def _run_async_impl(
@@ -331,73 +342,99 @@ class BaseAgent(BaseModel):
   ) -> Optional[Event]:
     """Runs the before_agent_callback if it exists.
 
+    Args:
+      ctx: InvocationContext, the invocation context for this agent.
+
     Returns:
       Optional[Event]: an event if callback provides content or changed state.
     """
-    ret_event = None
-
-    if not self.canonical_before_agent_callbacks:
-      return ret_event
-
     callback_context = CallbackContext(ctx)
 
-    for callback in self.canonical_before_agent_callbacks:
-      before_agent_callback_content = callback(
-          callback_context=callback_context
-      )
-      if inspect.isawaitable(before_agent_callback_content):
-        before_agent_callback_content = await before_agent_callback_content
-      if before_agent_callback_content:
-        ret_event = Event(
-            invocation_id=ctx.invocation_id,
-            author=self.name,
-            branch=ctx.branch,
-            content=before_agent_callback_content,
-            actions=callback_context._event_actions,
+    # Run callbacks from the plugins.
+    before_agent_callback_content = (
+        await ctx.plugin_manager.run_before_agent_callback(
+            agent=self, callback_context=callback_context
         )
-        ctx.end_invocation = True
-        return ret_event
+    )
+
+    # If no overrides are provided from the plugins, further run the canonical
+    # callbacks.
+    if (
+        not before_agent_callback_content
+        and self.canonical_before_agent_callbacks
+    ):
+      for callback in self.canonical_before_agent_callbacks:
+        before_agent_callback_content = callback(
+            callback_context=callback_context
+        )
+        if inspect.isawaitable(before_agent_callback_content):
+          before_agent_callback_content = await before_agent_callback_content
+        if before_agent_callback_content:
+          break
+
+    # Process the override content if exists, and further process the state
+    # change if exists.
+    if before_agent_callback_content:
+      ret_event = Event(
+          invocation_id=ctx.invocation_id,
+          author=self.name,
+          branch=ctx.branch,
+          content=before_agent_callback_content,
+          actions=callback_context._event_actions,
+      )
+      ctx.end_invocation = True
+      return ret_event
 
     if callback_context.state.has_delta():
-      ret_event = Event(
+      return Event(
           invocation_id=ctx.invocation_id,
           author=self.name,
           branch=ctx.branch,
           actions=callback_context._event_actions,
       )
 
-    return ret_event
+    return None
 
   async def __handle_after_agent_callback(
       self, invocation_context: InvocationContext
   ) -> Optional[Event]:
     """Runs the after_agent_callback if it exists.
 
+    Args:
+      invocation_context: InvocationContext, the invocation context for this
+        agent.
+
     Returns:
       Optional[Event]: an event if callback provides content or changed state.
     """
-    ret_event = None
-
-    if not self.canonical_after_agent_callbacks:
-      return ret_event
 
     callback_context = CallbackContext(invocation_context)
 
-    for callback in self.canonical_after_agent_callbacks:
-      after_agent_callback_content = callback(callback_context=callback_context)
-      if inspect.isawaitable(after_agent_callback_content):
-        after_agent_callback_content = await after_agent_callback_content
-      if after_agent_callback_content:
-        ret_event = Event(
-            invocation_id=invocation_context.invocation_id,
-            author=self.name,
-            branch=invocation_context.branch,
-            content=after_agent_callback_content,
-            actions=callback_context._event_actions,
+    # Run callbacks from the plugins.
+    after_agent_callback_content = (
+        await invocation_context.plugin_manager.run_after_agent_callback(
+            agent=self, callback_context=callback_context
         )
-        return ret_event
+    )
 
-    if callback_context.state.has_delta():
+    # If no overrides are provided from the plugins, further run the canonical
+    # callbacks.
+    if (
+        not after_agent_callback_content
+        and self.canonical_after_agent_callbacks
+    ):
+      for callback in self.canonical_after_agent_callbacks:
+        after_agent_callback_content = callback(
+            callback_context=callback_context
+        )
+        if inspect.isawaitable(after_agent_callback_content):
+          after_agent_callback_content = await after_agent_callback_content
+        if after_agent_callback_content:
+          break
+
+    # Process the override content if exists, and further process the state
+    # change if exists.
+    if after_agent_callback_content:
       ret_event = Event(
           invocation_id=invocation_context.invocation_id,
           author=self.name,
@@ -405,8 +442,17 @@ class BaseAgent(BaseModel):
           content=after_agent_callback_content,
           actions=callback_context._event_actions,
       )
+      return ret_event
 
-    return ret_event
+    if callback_context.state.has_delta():
+      return Event(
+          invocation_id=invocation_context.invocation_id,
+          author=self.name,
+          branch=invocation_context.branch,
+          content=after_agent_callback_content,
+          actions=callback_context._event_actions,
+      )
+    return None
 
   @override
   def model_post_init(self, __context: Any) -> None:
@@ -439,3 +485,49 @@ class BaseAgent(BaseModel):
         )
       sub_agent.parent_agent = self
     return self
+
+  @classmethod
+  @working_in_progress('BaseAgent.from_config is not ready for use.')
+  def from_config(
+      cls: Type[SelfAgent],
+      config: BaseAgentConfig,
+  ) -> SelfAgent:
+    """Creates an agent from a config.
+
+    This method converts fields in a config to the corresponding
+    fields in an agent.
+
+    Child classes should re-implement this method to support loading from their
+    custom config types.
+
+    Args:
+      config: The config to create the agent from.
+
+    Returns:
+      The created agent.
+    """
+    kwargs: Dict[str, Any] = {
+        'name': config.name,
+        'description': config.description,
+    }
+    return cls(**kwargs)
+
+
+@working_in_progress('BaseAgentConfig is not ready for use.')
+class BaseAgentConfig(BaseModel):
+  """The config for the YAML schema of a BaseAgent.
+
+  Do not use this class directly. It's the base class for all agent configs.
+  """
+
+  model_config = ConfigDict(extra='forbid')
+
+  agent_class: Literal['BaseAgent'] = 'BaseAgent'
+  """Required. The class of the agent. The value is used to differentiate
+  among different agent classes."""
+
+  name: str
+  """Required. The name of the agent."""
+
+  description: str = ''
+  """Optional. The description of the agent."""
