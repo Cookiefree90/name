@@ -1,0 +1,54 @@
+# .github/workflows/squash-pr.yml
+
+name: Squash Commits
+
+on:
+  pull_request:
+    types:
+      - labeled
+
+# Grant permission to write to the repository
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  squash:
+    # Only run if the 'squash-and-merge' label was added
+    if: github.event.label.name == 'squash-and-merge'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR Branch
+        uses: actions/checkout@v4
+        with:
+          # Check out the head of the PR
+          ref: ${{ github.event.pull_request.head.sha }}
+          # Fetch all history so we can rebase
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Squash Commits
+        run: |
+          # The PR's target branch (e.g., 'main' or 'develop')
+          BASE_BRANCH=${{ github.event.pull_request.base.ref }}
+          
+          # Get the commit hash of the merge base
+          MERGE_BASE=$(git merge-base origin/$BASE_BRANCH HEAD)
+          
+          echo "Squashing commits down to the merge base: $MERGE_BASE"
+          
+          # Perform the soft reset to un-commit changes
+          git reset --soft $MERGE_BASE
+          
+          # Commit all the changes as a single commit using the PR title
+          git commit -m "${{ github.event.pull_request.title }}"
+
+      - name: Force-Push to PR Branch
+        run: |
+          # Push the new squashed commit, overwriting the previous history
+          git push --force
