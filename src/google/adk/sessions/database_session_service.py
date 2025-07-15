@@ -604,7 +604,7 @@ def _extract_state_delta(state: dict[str, Any]):
   app_state_delta = {}
   user_state_delta = {}
   session_state_delta = {}
-  
+
   if state:
     for key, value in state.items():
       if key.startswith(State.APP_PREFIX):
@@ -613,25 +613,28 @@ def _extract_state_delta(state: dict[str, Any]):
         user_state_delta[key.removeprefix(State.USER_PREFIX)] = value
       elif not key.startswith(State.TEMP_PREFIX):
         session_state_delta[key] = value
-        
+
   return app_state_delta, user_state_delta, session_state_delta
 
 
 def _merge_state(app_state, user_state, session_state):
   """Merge states for response, excluding deleted keys."""
   merged_state = copy.deepcopy(session_state)
-  
+
   for key, value in app_state.items():
-    if value is not State._DELETED: 
+    if value is not State._DELETED:
       merged_state[State.APP_PREFIX + key] = value
-      
+
   for key, value in user_state.items():
     if value is not State._DELETED:
       merged_state[State.USER_PREFIX + key] = value
-      
+
   return merged_state
 
-def _apply_state_delta(target_state: dict[str, Any], delta: dict[str, Any]) -> None:
+
+def _apply_state_delta(
+    target_state: dict[str, Any], delta: dict[str, Any]
+) -> None:
   """Apply state delta to target state, handling deletions."""
   for key, value in delta.items():
     if value is State._DELETED:

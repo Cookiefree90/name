@@ -285,10 +285,10 @@ class InMemorySessionService(BaseSessionService):
 
     if event.actions and event.actions.state_delta:
       storage_session = self.sessions[app_name][user_id].get(session_id)
-      
+
       for key in event.actions.state_delta:
         value = event.actions.state_delta[key]
-        
+
         if key.startswith(State.APP_PREFIX):
           app_key = key.removeprefix(State.APP_PREFIX)
           if value is State._DELETED:
@@ -299,9 +299,13 @@ class InMemorySessionService(BaseSessionService):
         elif key.startswith(State.USER_PREFIX):
           user_key = key.removeprefix(State.USER_PREFIX)
           if value is State._DELETED:
-            self.user_state.setdefault(app_name, {}).setdefault(user_id, {}).pop(user_key, None)
+            self.user_state.setdefault(app_name, {}).setdefault(
+                user_id, {}
+            ).pop(user_key, None)
           else:
-            self.user_state.setdefault(app_name, {}).setdefault(user_id, {})[user_key] = value
+            self.user_state.setdefault(app_name, {}).setdefault(user_id, {})[
+                user_key
+            ] = value
 
     storage_session = self.sessions[app_name][user_id].get(session_id)
     await super().append_event(session=storage_session, event=event)
