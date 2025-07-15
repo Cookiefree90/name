@@ -14,13 +14,16 @@
 
 from __future__ import annotations
 
+import importlib
 import inspect
 import logging
+import os
 from typing import Any
 from typing import AsyncGenerator
 from typing import Awaitable
 from typing import Callable
 from typing import Dict
+from typing import List
 from typing import Literal
 from typing import Optional
 from typing import Type
@@ -54,6 +57,7 @@ from ..utils.feature_decorator import working_in_progress
 from .base_agent import BaseAgent
 from .base_agent import BaseAgentConfig
 from .callback_context import CallbackContext
+from .common_configs import CodeConfig
 from .invocation_context import InvocationContext
 from .readonly_context import ReadonlyContext
 
@@ -523,6 +527,67 @@ class LlmAgent(BaseAgent):
     return generate_content_config
 
   @classmethod
+  @working_in_progress('LlmAgent._resolve_tools is not ready for use.')
+  def _resolve_tools(
+      cls, tools_config: list[CodeConfig], config_abs_path: str
+  ) -> list[Any]:
+    """Resolve tools from configuration.
+
+    Args:
+      tools_config: List of tool configurations (CodeConfig objects).
+      config_abs_path: Absolute path to the config file.
+
+    Returns:
+      List of resolved tool objects.
+    """
+    resolved_tools = []
+    for tool_config in tools_config:
+      if tool_config.name == 'AgentTool':
+        from ..tools.agent_tool import AgentTool
+        from .config_agent_utils import from_config
+
+        if tool_config.args:
+          kwargs = {arg.name: arg.value for arg in tool_config.args if arg.name}
+          positional_args = [
+              arg.value for arg in tool_config.args if not arg.name
+          ]
+          if positional_args:
+            agent_path = positional_args[0]
+            if not os.path.isabs(agent_path):
+              folder_path = os.path.dirname(config_abs_path)
+              agent_path = os.path.join(folder_path, agent_path)
+            positional_args[0] = from_config(agent_path)
+          elif kwargs['agent']:
+            agent_path = kwargs['agent']
+            if not os.path.isabs(agent_path):
+              folder_path = os.path.dirname(config_abs_path)
+              agent_path = os.path.join(folder_path, agent_path)
+            kwargs['agent'] = from_config(agent_path)
+          else:
+            raise ValueError('Missing `agent` argument in AgentTool.')
+          resolved_tools.append(AgentTool(*positional_args, **kwargs))
+        else:
+          raise ValueError(
+              'AgentTool must have arguments. Please specify the arguments in'
+              ' the config.'
+          )
+      elif '.' not in tool_config.name:
+        module = importlib.import_module('google.adk.tools')
+        obj = getattr(module, tool_config.name)
+        if isinstance(obj, ToolUnion):
+          resolved_tools.append(obj)
+        else:
+          raise ValueError(
+              f'Invalid tool name: {tool_config.name} is not a built-in tool.'
+          )
+      else:
+        from .config_agent_utils import resolve_code_reference
+
+        resolved_tools.append(resolve_code_reference(tool_config))
+
+    return resolved_tools
+
+  @classmethod
   @override
   @working_in_progress('LlmAgent.from_config is not ready for use.')
   def from_config(
@@ -543,6 +608,8 @@ class LlmAgent(BaseAgent):
       agent.include_contents = config.include_contents
     if config.output_key:
       agent.output_key = config.output_key
+    if config.tools:
+      agent.tools = cls._resolve_tools(config.tools, config_abs_path)
     return agent
 
 
@@ -574,3 +641,58 @@ class LlmAgentConfig(BaseAgentConfig):
 
   include_contents: Literal['default', 'none'] = 'default'
   """Optional. LlmAgent.include_contents."""
+
+  tools: Optional[list[CodeConfig]] = None
+  """Optional. LlmAgent.tools.
+
+  Examples:
+
+    For ADK built-in tools in `google.adk.tools` package, they can be referenced
+    directly with the name:
+
+      ```
+      tools:
+        - name: google_search
+        - name: load_memory
+      ```
+
+    For user-defined tools, they can be referenced with fully qualified name:
+
+      ```
+      tools:
+        - name: my_library.my_tools.my_tool
+      ```
+
+    For tools that needs to be created via functions:
+
+      ```
+      tools:
+        - name: my_library.my_tools.create_tool
+          args:
+            - name: param1
+              value: value1
+            - name: param2
+              value: value2
+      ```
+
+    For more advanced tools, instead of specifying arguments in config, it's
+    recommended to define them in Python files and reference them. E.g.,
+
+      ```
+      # tools.py
+      my_mcp_toolset = MCPToolset(
+          connection_params=StdioServerParameters(
+              command="npx",
+              args=["-y", "@notionhq/notion-mcp-server"],
+              env={"OPENAPI_MCP_HEADERS": NOTION_HEADERS},
+          )
+      )
+      ```
+
+    Then, reference the toolset in config:
+
+    ```
+    tools:
+      - name: tools.my_mcp_toolset
+    ```
+  """
