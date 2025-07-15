@@ -106,4 +106,8 @@ class BaseSessionService(abc.ABC):
     for key, value in event.actions.state_delta.items():
       if key.startswith(State.TEMP_PREFIX):
         continue
-      session.state.update({key: value})
+      
+      if value is State._DELETED:
+        session.state.pop(key, None)
+      else:
+        session.state[key] = value

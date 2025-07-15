@@ -24,6 +24,8 @@ class State:
   USER_PREFIX = "user:"
   TEMP_PREFIX = "temp:"
 
+  _DELETED = "__DELETED__"
+
   def __init__(self, value: dict[str, Any], delta: dict[str, Any]):
     """
     Args:
@@ -36,6 +38,8 @@ class State:
   def __getitem__(self, key: str) -> Any:
     """Returns the value of the state dict for the given key."""
     if key in self._delta:
+      if self._delta[key] is self._DELETED:
+        raise KeyError(key)
       return self._delta[key]
     return self._value[key]
 
@@ -43,10 +47,7 @@ class State:
     """Deletes the value of the state dict for the given key"""
     if key not in self:
       raise KeyError(key)
-    if key in self._delta:
-      del self._delta[key]
-    if key in self._value:
-      del self._value[key]
+    self._delta[key] = self._DELETED
 
   def __setitem__(self, key: str, value: Any):
     """Sets the value of the state dict for the given key."""
@@ -57,6 +58,8 @@ class State:
 
   def __contains__(self, key: str) -> bool:
     """Whether the state dict contains the given key."""
+    if key in self._delta and self._delta[key] is self._DELETED:
+      return False
     return key in self._value or key in self._delta
 
   def has_delta(self) -> bool:
@@ -90,5 +93,9 @@ class State:
     """Returns the state dict."""
     result = {}
     result.update(self._value)
-    result.update(self._delta)
+    for key, value in self._delta.items():
+      if value is self._DELETED:
+        result.pop(key, None)
+      else:
+        result[key] = value
     return result
