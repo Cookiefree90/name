@@ -51,6 +51,7 @@ from starlette.types import Lifespan
 from typing_extensions import override
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+import yaml
 
 from ..agents import RunConfig
 from ..agents.live_request_queue import LiveRequest
@@ -77,6 +78,7 @@ from ..sessions.database_session_service import DatabaseSessionService
 from ..sessions.in_memory_session_service import InMemorySessionService
 from ..sessions.session import Session
 from ..sessions.vertex_ai_session_service import VertexAiSessionService
+from ..utils.feature_decorator import working_in_progress
 from .cli_eval import EVAL_SESSION_ID_PREFIX
 from .cli_eval import EvalStatus
 from .utils import cleanup
@@ -175,6 +177,7 @@ class AgentRunRequest(common.BaseModel):
   session_id: str
   new_message: types.Content
   streaming: bool = False
+  state_delta: Optional[dict[str, Any]] = None
 
 
 class AddSessionToEvalSetRequest(common.BaseModel):
@@ -207,6 +210,14 @@ class RunEvalResult(common.BaseModel):
 
 class GetEventGraphResult(common.BaseModel):
   dot_src: str
+
+
+class AgentBuildRequest(common.BaseModel):
+  agent_name: str
+  agent_type: str
+  model: str
+  description: str
+  instruction: str
 
 
 def get_fast_api_app(
@@ -513,7 +524,11 @@ def get_fast_api_app(
   )
   def list_eval_sets(app_name: str) -> list[str]:
     """Lists all eval sets for the given app."""
-    return eval_sets_manager.list_eval_sets(app_name)
+    try:
+      return eval_sets_manager.list_eval_sets(app_name)
+    except NotFoundError as e:
+      logger.warning(e)
+      return []
 
   @app.post(
       "/apps/{app_name}/eval_sets/{eval_set_id}/add_session",
@@ -803,6 +818,29 @@ def get_fast_api_app(
         filename=artifact_name,
     )
 
+  @working_in_progress("builder_save is not ready for use.")
+  @app.post("/builder/save", response_model_exclude_none=True)
+  async def builder_build(req: AgentBuildRequest):
+    base_path = Path.cwd() / agents_dir
+    agent = {
+        "agent_class": req.agent_type,
+        "name": req.agent_name,
+        "model": req.model,
+        "description": req.description,
+        "instruction": f"""{req.instruction}""",
+    }
+    try:
+      agent_dir = os.path.join(base_path, req.agent_name)
+      os.makedirs(agent_dir, exist_ok=True)
+      file_path = os.path.join(agent_dir, "root_agent.yaml")
+      with open(file_path, "w") as file:
+        yaml.dump(agent, file, default_flow_style=False)
+      agent_loader.load_agent(agent_name=req.agent_name)
+      return True
+    except Exception as e:
+      logger.exception("Error in builder_build: %s", e)
+      return False
+
   @app.post("/run", response_model_exclude_none=True)
   async def agent_run(req: AgentRunRequest) -> list[Event]:
     session = await session_service.get_session(
@@ -840,6 +878,7 @@ def get_fast_api_app(
             user_id=req.user_id,
             session_id=req.session_id,
             new_message=req.new_message,
+            state_delta=req.state_delta,
             run_config=RunConfig(streaming_mode=stream_mode),
         ):
           # Format as SSE data
@@ -1003,6 +1042,7 @@ def get_fast_api_app(
       from a2a.server.request_handlers import DefaultRequestHandler
       from a2a.server.tasks import InMemoryTaskStore
       from a2a.types import AgentCard
+      from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 
       from ..a2a.executor.a2a_agent_executor import A2aAgentExecutor
 
@@ -1066,7 +1106,7 @@ def get_fast_api_app(
 
           routes = a2a_app.routes(
               rpc_url=f"/a2a/{app_name}",
-              agent_card_url=f"/a2a/{app_name}/.well-known/agent.json",
+              agent_card_url=f"/a2a/{app_name}{AGENT_CARD_WELL_KNOWN_PATH}",
           )
 
           for new_route in routes:

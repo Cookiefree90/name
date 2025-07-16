@@ -35,11 +35,14 @@ from litellm import acompletion
 from litellm import ChatCompletionAssistantMessage
 from litellm import ChatCompletionAssistantToolCall
 from litellm import ChatCompletionDeveloperMessage
+from litellm import ChatCompletionFileObject
+from litellm import ChatCompletionImageObject
 from litellm import ChatCompletionImageUrlObject
 from litellm import ChatCompletionMessageToolCall
 from litellm import ChatCompletionTextObject
 from litellm import ChatCompletionToolMessage
 from litellm import ChatCompletionUserMessage
+from litellm import ChatCompletionVideoObject
 from litellm import ChatCompletionVideoUrlObject
 from litellm import completion
 from litellm import CustomStreamWrapper
@@ -249,17 +252,31 @@ def _get_content(
       data_uri = f"data:{part.inline_data.mime_type};base64,{base64_string}"
 
       if part.inline_data.mime_type.startswith("image"):
+        # Extract format from mime type (e.g., "image/png" -> "png")
+        format_type = part.inline_data.mime_type.split("/")[-1]
         content_objects.append(
-            ChatCompletionImageUrlObject(
+            ChatCompletionImageObject(
                 type="image_url",
-                image_url=data_uri,
+                image_url=ChatCompletionImageUrlObject(
+                    url=data_uri, format=format_type
+                ),
             )
         )
       elif part.inline_data.mime_type.startswith("video"):
+        # Extract format from mime type (e.g., "video/mp4" -> "mp4")
+        format_type = part.inline_data.mime_type.split("/")[-1]
         content_objects.append(
-            ChatCompletionVideoUrlObject(
+            ChatCompletionVideoObject(
                 type="video_url",
-                video_url=data_uri,
+                video_url=ChatCompletionVideoUrlObject(
+                    url=data_uri, format=format_type
+                ),
+            )
+        )
+      elif part.inline_data.mime_type == "application/pdf":
+        content_objects.append(
+            ChatCompletionFileObject(
+                type="file", file={"file_data": data_uri, "format": "pdf"}
             )
         )
       else:
