@@ -53,6 +53,7 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 import yaml
 
+from .. import tools
 from ..agents import RunConfig
 from ..agents.live_request_queue import LiveRequest
 from ..agents.live_request_queue import LiveRequestQueue
@@ -390,6 +391,11 @@ def get_fast_api_app(
     ]
     agent_names.sort()
     return agent_names
+
+  @app.get("/tools")
+  def list_tools() -> list[str]:
+    """Lists all available tools."""
+    return tools.__all__
 
   @app.get("/debug/trace/{event_id}")
   def get_trace_dict(event_id: str) -> Any:
