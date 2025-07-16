@@ -49,6 +49,9 @@ from pydantic import Field
 from pydantic import ValidationError
 from starlette.types import Lifespan
 from typing_extensions import override
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+import yaml
 
 from ..agents import RunConfig
 from ..agents.live_request_queue import LiveRequest
@@ -75,6 +78,7 @@ from ..sessions.database_session_service import DatabaseSessionService
 from ..sessions.in_memory_session_service import InMemorySessionService
 from ..sessions.session import Session
 from ..sessions.vertex_ai_session_service import VertexAiSessionService
+from ..utils.feature_decorator import working_in_progress
 from .cli_eval import EVAL_SESSION_ID_PREFIX
 from .cli_eval import EvalStatus
 from .utils import cleanup
@@ -87,6 +91,21 @@ from .utils.agent_loader import AgentLoader
 logger = logging.getLogger("google_adk." + __name__)
 
 _EVAL_SET_FILE_EXTENSION = ".evalset.json"
+_app_name = ""
+_runners_to_clean = set()
+
+
+class AgentChangeEventHandler(FileSystemEventHandler):
+
+  def __init__(self, agent_loader: AgentLoader):
+    self.agent_loader = agent_loader
+
+  def on_modified(self, event):
+    if not (event.src_path.endswith(".py") or event.src_path.endswith(".yaml")):
+      return
+    logger.info("Change detected in agents directory: %s", event.src_path)
+    self.agent_loader.remove_agent_from_cache(_app_name)
+    _runners_to_clean.add(_app_name)
 
 
 class ApiServerSpanExporter(export.SpanExporter):
@@ -158,6 +177,7 @@ class AgentRunRequest(common.BaseModel):
   session_id: str
   new_message: types.Content
   streaming: bool = False
+  state_delta: Optional[dict[str, Any]] = None
 
 
 class AddSessionToEvalSetRequest(common.BaseModel):
@@ -192,6 +212,14 @@ class GetEventGraphResult(common.BaseModel):
   dot_src: str
 
 
+class AgentBuildRequest(common.BaseModel):
+  agent_name: str
+  agent_type: str
+  model: str
+  description: str
+  instruction: str
+
+
 def get_fast_api_app(
     *,
     agents_dir: str,
@@ -205,6 +233,7 @@ def get_fast_api_app(
     host: str = "127.0.0.1",
     port: int = 8000,
     trace_to_cloud: bool = False,
+    reload_agents: bool = False,
     lifespan: Optional[Lifespan[FastAPI]] = None,
 ) -> FastAPI:
   # InMemory tracing dict.
@@ -235,7 +264,6 @@ def get_fast_api_app(
 
   @asynccontextmanager
   async def internal_lifespan(app: FastAPI):
-
     try:
       if lifespan:
         async with lifespan(app) as lifespan_context:
@@ -243,6 +271,9 @@ def get_fast_api_app(
       else:
         yield
     finally:
+      if reload_agents:
+        observer.stop()
+        observer.join()
       # Create tasks for all runner closures to run concurrently
       await cleanup.close_runners(list(runner_dict.values()))
 
@@ -336,6 +367,13 @@ def get_fast_api_app(
   # initialize Agent Loader
   agent_loader = AgentLoader(agents_dir)
 
+  # Set up a file system watcher to detect changes in the agents directory.
+  observer = Observer()
+  if reload_agents:
+    event_handler = AgentChangeEventHandler(agent_loader)
+    observer.schedule(event_handler, agents_dir, recursive=True)
+    observer.start()
+
   @app.get("/list-apps")
   def list_apps() -> list[str]:
     base_path = Path.cwd() / agents_dir
@@ -390,6 +428,9 @@ def get_fast_api_app(
     )
     if not session:
       raise HTTPException(status_code=404, detail="Session not found")
+
+    global _app_name
+    _app_name = app_name
     return session
 
   @app.get(
@@ -483,7 +524,11 @@ def get_fast_api_app(
   )
   def list_eval_sets(app_name: str) -> list[str]:
     """Lists all eval sets for the given app."""
-    return eval_sets_manager.list_eval_sets(app_name)
+    try:
+      return eval_sets_manager.list_eval_sets(app_name)
+    except NotFoundError as e:
+      logger.warning(e)
+      return []
 
   @app.post(
       "/apps/{app_name}/eval_sets/{eval_set_id}/add_session",
@@ -773,6 +818,29 @@ def get_fast_api_app(
         filename=artifact_name,
     )
 
+  @working_in_progress("builder_save is not ready for use.")
+  @app.post("/builder/save", response_model_exclude_none=True)
+  async def builder_build(req: AgentBuildRequest):
+    base_path = Path.cwd() / agents_dir
+    agent = {
+        "agent_class": req.agent_type,
+        "name": req.agent_name,
+        "model": req.model,
+        "description": req.description,
+        "instruction": f"""{req.instruction}""",
+    }
+    try:
+      agent_dir = os.path.join(base_path, req.agent_name)
+      os.makedirs(agent_dir, exist_ok=True)
+      file_path = os.path.join(agent_dir, "root_agent.yaml")
+      with open(file_path, "w") as file:
+        yaml.dump(agent, file, default_flow_style=False)
+      agent_loader.load_agent(agent_name=req.agent_name)
+      return True
+    except Exception as e:
+      logger.exception("Error in builder_build: %s", e)
+      return False
+
   @app.post("/run", response_model_exclude_none=True)
   async def agent_run(req: AgentRunRequest) -> list[Event]:
     session = await session_service.get_session(
@@ -810,6 +878,7 @@ def get_fast_api_app(
             user_id=req.user_id,
             session_id=req.session_id,
             new_message=req.new_message,
+            state_delta=req.state_delta,
             run_config=RunConfig(streaming_mode=stream_mode),
         ):
           # Format as SSE data
@@ -947,6 +1016,11 @@ def get_fast_api_app(
 
   async def _get_runner_async(app_name: str) -> Runner:
     """Returns the runner for the given app."""
+    if app_name in _runners_to_clean:
+      _runners_to_clean.remove(app_name)
+      runner = runner_dict.pop(app_name, None)
+      await cleanup.close_runners(list([runner]))
+
     envs.load_dotenv_for_agent(os.path.basename(app_name), agents_dir)
     if app_name in runner_dict:
       return runner_dict[app_name]
@@ -968,6 +1042,7 @@ def get_fast_api_app(
       from a2a.server.request_handlers import DefaultRequestHandler
       from a2a.server.tasks import InMemoryTaskStore
       from a2a.types import AgentCard
+      from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 
       from ..a2a.executor.a2a_agent_executor import A2aAgentExecutor
 
@@ -1031,7 +1106,7 @@ def get_fast_api_app(
 
           routes = a2a_app.routes(
               rpc_url=f"/a2a/{app_name}",
-              agent_card_url=f"/a2a/{app_name}/.well-known/agent.json",
+              agent_card_url=f"/a2a/{app_name}{AGENT_CARD_WELL_KNOWN_PATH}",
           )
 
           for new_route in routes:

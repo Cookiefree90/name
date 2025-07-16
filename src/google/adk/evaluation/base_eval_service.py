@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from enum import Enum
 from typing import AsyncGenerator
 from typing import Optional
 
@@ -41,6 +42,17 @@ class EvaluateConfig(BaseModel):
       description="""The list of metrics to be used in Eval.""",
   )
 
+  parallelism: int = Field(
+      default=4,
+      description="""Number of parallel evaluations to run during an Eval. Few
+factors to consider while changing this value:
+
+1) Your available quota with the model, especially for those metrics that use
+a model as a judge. Models tend to enforce per-minute or per-second SLAs. Using
+a larger value could result in the eval quickly consuming the quota.
+""",
+  )
+
 
 class InferenceConfig(BaseModel):
   """Contains configurations need to run inferences."""
@@ -54,6 +66,19 @@ class InferenceConfig(BaseModel):
       default=None,
       description="""Labels with user-defined metadata to break down billed
 charges.""",
+  )
+
+  parallelism: int = Field(
+      default=4,
+      description="""Number of parallel inferences to run during an Eval. Few
+factors to consider while changing this value:
+
+1) Your available quota with the model. Models tend to enforce per-minute or
+per-second SLAs. Using a larger value could result in the eval quickly consuming
+the quota.
+
+2) The tools used by the Agent could also have their SLA. Using a larger value
+could also overwhelm those tools.""",
   )
 
 
@@ -88,6 +113,14 @@ in an eval set are evaluated.
   )
 
 
+class InferenceStatus(Enum):
+  """Status of the inference."""
+
+  UNKNOWN = 0
+  SUCCESS = 1
+  FAILURE = 2
+
+
 class InferenceResult(BaseModel):
   """Contains inference results for a single eval case."""
 
@@ -106,12 +139,23 @@ class InferenceResult(BaseModel):
       description="""Id of the eval case for which inferences were generated.""",
   )
 
-  inferences: list[Invocation] = Field(
-      description="""Inferences obtained from the Agent for the eval case."""
+  inferences: Optional[list[Invocation]] = Field(
+      default=None,
+      description="""Inferences obtained from the Agent for the eval case.""",
   )
 
   session_id: Optional[str] = Field(
       description="""Id of the inference session."""
+  )
+
+  status: InferenceStatus = Field(
+      default=InferenceStatus.UNKNOWN,
+      description="""Status of the inference.""",
+  )
+
+  error_message: Optional[str] = Field(
+      default=None,
+      description="""Error message if the inference failed.""",
   )
 
 

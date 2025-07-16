@@ -6,6 +6,19 @@ This document provides context for the Gemini CLI and Gemini Code Assist to unde
 
 The Agent Development Kit (ADK) is an open-source, code-first Python toolkit for building, evaluating, and deploying sophisticated AI agents with flexibility and control. While optimized for Gemini and the Google ecosystem, ADK is model-agnostic, deployment-agnostic, and is built for compatibility with other frameworks. ADK was designed to make agent development feel more like software development, to make it easier for developers to create, deploy, and orchestrate agentic architectures that range from simple tasks to complex workflows.
 
+## Project Architecture
+
+Please refer to [ADK Project Overview and Architecture](https://github.com/google/adk-python/blob/main/contributing/adk_project_overview_and_architecture.md) for details.
+
+### ADK Live (Bidi-streaming)
+
+- ADK live feature can be accessed from runner.run_live(...) and corresponding FAST api endpoint.
+- ADK live feature is built on top of [Gemini Live API](https://cloud.google.com/vertex-ai/generative-ai/docs/live-api). We integrate Gemini Live API through [GenAI SDK](https://github.com/googleapis/python-genai).
+- ADK live related configs are in [run_config.py](https://github.com/google/adk-python/blob/main/src/google/adk/agents/run_config.py).
+- ADK live under multi-agent scenario: we convert the audio into text. This text will be passed to next agent as context.
+- Most logics are in [base_llm_flow.py](https://github.com/google/adk-python/blob/main/src/google/adk/flows/llm_flows/base_llm_flow.py) and [gemini_llm_connection.py](https://github.com/google/adk-python/blob/main/src/google/adk/models/gemini_llm_connection.py).
+- Tests are in [tests/unittests/streaming](https://github.com/google/adk-python/tree/main/tests/unittests/streaming).
+
 ## ADK: Style Guides
 
 ### Python Style Guide
@@ -197,3 +210,10 @@ The following changes are considered breaking and necessitate a MAJOR version
 
 - Dependency Removal: Removing support for a previously integrated third-party
  library or tool type.
+
+## Commit Message Format
+
+- Please use [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/)
+format.
+- If it's not a breaking change, please add #non-breaking tag. If it's a
+breaking change, please add #breaking.
