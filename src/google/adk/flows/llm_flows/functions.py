@@ -22,6 +22,7 @@ import logging
 from typing import Any
 from typing import AsyncGenerator
 from typing import cast
+from typing import Union
 from typing import Optional
 import uuid
 
@@ -128,7 +129,7 @@ async def handle_function_calls_async(
     function_call_event: Event,
     tools_dict: dict[str, BaseTool],
     filters: Optional[set[str]] = None,
-) -> AsyncGenerator[Opeional[Event], None]:
+) -> AsyncGenerator[Optional[Event], None]:
   """Calls the functions and returns the function response event."""
   from ...agents.llm_agent import LlmAgent
 
@@ -250,10 +251,9 @@ async def handle_function_calls_async(
         yield merged_event
 
 
-
 async def _ensure_async_generator_function_response(
         function_response: Union[str, dict, AsyncGenerator]
-) -> AsyncGenerator[Opeional[Event], None]:
+) -> AsyncGenerator[Optional[Union[str, dict]], None]:
     if inspect.isasyncgen(function_response):
         async for response in function_response:
             yield response
