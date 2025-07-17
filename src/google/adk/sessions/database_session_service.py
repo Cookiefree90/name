@@ -54,6 +54,7 @@ from . import _session_util
 from ..events.event import Event
 from .base_session_service import BaseSessionService
 from .base_session_service import GetSessionConfig
+from .base_session_service import ListSessionsConfig
 from .base_session_service import ListSessionsResponse
 from .session import Session
 from .state import State
@@ -498,22 +499,35 @@ class DatabaseSessionService(BaseSessionService):
 
   @override
   async def list_sessions(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: str, config: Optional[ListSessionsConfig] = None
   ) -> ListSessionsResponse:
+    
     with self.database_session_factory() as sql_session:
       results = (
           sql_session.query(StorageSession)
           .filter(StorageSession.app_name == app_name)
           .filter(StorageSession.user_id == user_id)
-          .all()
+          .order_by(StorageSession.update_time.desc())
       )
+      
+      # Apply pagination if specified
+      if config and config.max_sessions:
+        query = query.limit(config.max_sessions)
+      
+      results = query.all()
+      
       sessions = []
       for storage_session in results:
+        # Determine whether to include state
+        session_state = {}
+        if config and config.include_state:
+          session_state = storage_session.state
+        
         session = Session(
             app_name=app_name,
             user_id=user_id,
             id=storage_session.id,
-            state={},
+            state=session_state,
             last_update_time=storage_session.update_timestamp_tz,
         )
         sessions.append(session)

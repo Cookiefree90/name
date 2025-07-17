@@ -25,6 +25,7 @@ from typing_extensions import override
 from ..events.event import Event
 from .base_session_service import BaseSessionService
 from .base_session_service import GetSessionConfig
+from .base_session_service import ListSessionsConfig
 from .base_session_service import ListSessionsResponse
 from .session import Session
 from .state import State
@@ -201,18 +202,18 @@ class InMemorySessionService(BaseSessionService):
 
   @override
   async def list_sessions(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: str, config: Optional[ListSessionsConfig] = None
   ) -> ListSessionsResponse:
-    return self._list_sessions_impl(app_name=app_name, user_id=user_id)
+    return self._list_sessions_impl(app_name=app_name, user_id=user_id, config=config)
 
   def list_sessions_sync(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: str, config: Optional[ListSessionsConfig] = None
   ) -> ListSessionsResponse:
     logger.warning('Deprecated. Please migrate to the async method.')
-    return self._list_sessions_impl(app_name=app_name, user_id=user_id)
+    return self._list_sessions_impl(app_name=app_name, user_id=user_id, config=config)
 
   def _list_sessions_impl(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: str, config: Optional[ListSessionsConfig] = None
   ) -> ListSessionsResponse:
     empty_response = ListSessionsResponse()
     if app_name not in self.sessions:
@@ -221,10 +222,25 @@ class InMemorySessionService(BaseSessionService):
       return empty_response
 
     sessions_without_events = []
-    for session in self.sessions[app_name][user_id].values():
+    all_sessions = list(self.sessions[app_name][user_id].values())
+    
+    # Sort by last_update_time in descending order to get most recent first
+    all_sessions.sort(key=lambda s: s.last_update_time, reverse=True)
+    
+    # Apply pagination if specified
+    if config and config.max_sessions:
+      all_sessions = all_sessions[:config.max_sessions]
+    
+    for session in all_sessions:
       copied_session = copy.deepcopy(session)
       copied_session.events = []
-      copied_session.state = {}
+      
+      # Determine whether to include state
+      if config and config.include_state:
+        copied_session.state = session.state
+      else:
+        copied_session.state = {}
+      
       sessions_without_events.append(copied_session)
     return ListSessionsResponse(sessions=sessions_without_events)
 

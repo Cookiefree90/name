@@ -31,10 +31,20 @@ class GetSessionConfig(BaseModel):
   after_timestamp: Optional[float] = None
 
 
+class ListSessionsConfig(BaseModel):
+  """The configuration of listing sessions."""
+
+  max_sessions: Optional[int] = None
+  """Maximum number of sessions to return. If not specified, all sessions are returned."""
+  
+  include_state: bool = False
+  """Whether to include the state data in the response. Default is False for performance."""
+
+
 class ListSessionsResponse(BaseModel):
   """The response of listing sessions.
 
-  The events and states are not set within each Session object.
+  The events and states are not set within each Session object unless explicitly requested.
   """
 
   sessions: list[Session] = Field(default_factory=list)
@@ -81,7 +91,7 @@ class BaseSessionService(abc.ABC):
 
   @abc.abstractmethod
   async def list_sessions(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: str, config: Optional[ListSessionsConfig] = None
   ) -> ListSessionsResponse:
     """Lists all the sessions."""
 

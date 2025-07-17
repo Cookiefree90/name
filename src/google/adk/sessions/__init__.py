@@ -14,6 +14,9 @@
 import logging
 
 from .base_session_service import BaseSessionService
+from .base_session_service import GetSessionConfig
+from .base_session_service import ListSessionsConfig
+from .base_session_service import ListSessionsResponse
 from .in_memory_session_service import InMemorySessionService
 from .session import Session
 from .state import State
@@ -24,7 +27,10 @@ logger = logging.getLogger('google_adk.' + __name__)
 
 __all__ = [
     'BaseSessionService',
+    'GetSessionConfig',
     'InMemorySessionService',
+    'ListSessionsConfig',
+    'ListSessionsResponse',
     'Session',
     'State',
     'VertexAiSessionService',

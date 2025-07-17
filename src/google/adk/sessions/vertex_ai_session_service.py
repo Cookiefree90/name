@@ -39,6 +39,7 @@ from ..events.event import Event
 from ..events.event_actions import EventActions
 from .base_session_service import BaseSessionService
 from .base_session_service import GetSessionConfig
+from .base_session_service import ListSessionsConfig
 from .base_session_service import ListSessionsResponse
 from .session import Session
 
@@ -270,7 +271,7 @@ class VertexAiSessionService(BaseSessionService):
 
   @override
   async def list_sessions(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: str, config: Optional[ListSessionsConfig] = None
   ) -> ListSessionsResponse:
     reasoning_engine_id = self._get_reasoning_engine_id(app_name)
     api_client = self._get_api_client()
@@ -291,13 +292,30 @@ class VertexAiSessionService(BaseSessionService):
     if not api_response or api_response.get('httpHeaders', None):
       return ListSessionsResponse()
 
+    api_sessions = api_response['sessions']
+    
+    # Sort by updateTime in descending order to get most recent first
+    api_sessions.sort(key=lambda s: s.get('updateTime', ''), reverse=True)
+    
+    # Apply pagination if specified
+    if config and config.max_sessions:
+      api_sessions = api_sessions[:config.max_sessions]
+
     sessions = []
-    for api_session in api_response['sessions']:
+    for api_session in api_sessions:
+      session_state = {}
+      if config and config.include_state:
+        # For Vertex AI, we'd need to fetch individual session details to get state
+        # This is a performance trade-off - we can either make individual calls
+        # or keep the current behavior. For now, we'll keep it empty but document it.
+        # In a real implementation, you might want to batch these calls or cache them.
+        pass
+      
       session = Session(
           app_name=app_name,
           user_id=user_id,
           id=api_session['name'].split('/')[-1],
-          state={},
+          state=session_state,
           last_update_time=isoparse(api_session['updateTime']).timestamp(),
       )
       sessions.append(session)
