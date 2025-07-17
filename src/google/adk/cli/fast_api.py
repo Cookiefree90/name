@@ -20,6 +20,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import time
 import traceback
 import typing
@@ -32,6 +33,7 @@ import click
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
@@ -51,7 +53,6 @@ from starlette.types import Lifespan
 from typing_extensions import override
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
-import yaml
 
 from ..agents import RunConfig
 from ..agents.live_request_queue import LiveRequest
@@ -177,6 +178,7 @@ class AgentRunRequest(common.BaseModel):
   session_id: str
   new_message: types.Content
   streaming: bool = False
+  state_delta: Optional[dict[str, Any]] = None
 
 
 class AddSessionToEvalSetRequest(common.BaseModel):
@@ -209,14 +211,6 @@ class RunEvalResult(common.BaseModel):
 
 class GetEventGraphResult(common.BaseModel):
   dot_src: str
-
-
-class AgentBuildRequest(common.BaseModel):
-  agent_name: str
-  agent_type: str
-  model: str
-  description: str
-  instruction: str
 
 
 def get_fast_api_app(
@@ -523,7 +517,11 @@ def get_fast_api_app(
   )
   def list_eval_sets(app_name: str) -> list[str]:
     """Lists all eval sets for the given app."""
-    return eval_sets_manager.list_eval_sets(app_name)
+    try:
+      return eval_sets_manager.list_eval_sets(app_name)
+    except NotFoundError as e:
+      logger.warning(e)
+      return []
 
   @app.post(
       "/apps/{app_name}/eval_sets/{eval_set_id}/add_session",
@@ -815,26 +813,30 @@ def get_fast_api_app(
 
   @working_in_progress("builder_save is not ready for use.")
   @app.post("/builder/save", response_model_exclude_none=True)
-  async def builder_build(req: AgentBuildRequest):
+  async def builder_build(files: list[UploadFile]) -> bool:
     base_path = Path.cwd() / agents_dir
-    agent = {
-        "agent_class": req.agent_type,
-        "name": req.agent_name,
-        "model": req.model,
-        "description": req.description,
-        "instruction": f"""{req.instruction}""",
-    }
-    try:
-      agent_dir = os.path.join(base_path, req.agent_name)
-      os.makedirs(agent_dir, exist_ok=True)
-      file_path = os.path.join(agent_dir, "root_agent.yaml")
-      with open(file_path, "w") as file:
-        yaml.dump(agent, file, default_flow_style=False)
-      agent_loader.load_agent(agent_name=req.agent_name)
-      return True
-    except Exception as e:
-      logger.exception("Error in builder_build: %s", e)
-      return False
+
+    for file in files:
+      try:
+        # File name format: {app_name}/{agent_name}.yaml
+        if not file.filename:
+          logger.exception("Agent name is missing in the input files")
+          return False
+
+        agent_name, filename = file.filename.split("/")
+
+        agent_dir = os.path.join(base_path, agent_name)
+        os.makedirs(agent_dir, exist_ok=True)
+        file_path = os.path.join(agent_dir, filename)
+
+        with open(file_path, "w") as buffer:
+          shutil.copyfileobj(file.file, buffer)
+
+      except Exception as e:
+        logger.exception("Error in builder_build: %s", e)
+        return False
+
+    return True
 
   @app.post("/run", response_model_exclude_none=True)
   async def agent_run(req: AgentRunRequest) -> list[Event]:
@@ -873,6 +875,7 @@ def get_fast_api_app(
             user_id=req.user_id,
             session_id=req.session_id,
             new_message=req.new_message,
+            state_delta=req.state_delta,
             run_config=RunConfig(streaming_mode=stream_mode),
         ):
           # Format as SSE data
