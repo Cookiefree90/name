@@ -466,16 +466,18 @@ class BaseLlmFlow(ABC):
       function_call_event: Event,
       llm_request: LlmRequest,
   ) -> AsyncGenerator[Event, None]:
-    if function_response_event := await functions.handle_function_calls_async(
+    if function_response_event_generator := await functions.handle_function_calls_async(
         invocation_context, function_call_event, llm_request.tools_dict
     ):
-      auth_event = functions.generate_auth_event(
-          invocation_context, function_response_event
-      )
-      if auth_event:
-        yield auth_event
+      async for function_response_event in function_response_event_generator:
+        auth_event = functions.generate_auth_event(
+            invocation_context, function_response_event
+        )
+        if auth_event:
+          yield auth_event
 
-      yield function_response_event
+        yield function_response_event
+
       transfer_to_agent = function_response_event.actions.transfer_to_agent
       if transfer_to_agent:
         agent_to_run = self._get_agent_to_run(
