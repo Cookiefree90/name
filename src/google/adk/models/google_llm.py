@@ -27,7 +27,6 @@ from typing import Union
 
 from google.genai import Client
 from google.genai import types
-from google.genai.types import FinishReason
 from typing_extensions import override
 
 from .. import version
@@ -72,6 +71,8 @@ class Gemini(BaseLlm):
         r'projects\/.+\/locations\/.+\/endpoints\/.+',
         # vertex gemini long name
         r'projects\/.+\/locations\/.+\/publishers\/google\/models\/gemini.+',
+        'computer-use-exp',
+        r'projects\/.+\/locations\/.+\/publishers\/google\/models\/computer-use-exp',
     ]
 
   async def generate_content_async(
@@ -162,12 +163,8 @@ class Gemini(BaseLlm):
           parts.append(types.Part.from_text(text=text))
         yield LlmResponse(
             content=types.ModelContent(parts=parts),
-            error_code=None
-            if response.candidates[0].finish_reason == FinishReason.STOP
-            else response.candidates[0].finish_reason,
-            error_message=None
-            if response.candidates[0].finish_reason == FinishReason.STOP
-            else response.candidates[0].finish_message,
+            error_code=response.candidates[0].finish_reason,
+            error_message=response.candidates[0].finish_message,
             usage_metadata=usage_metadata,
         )
 
@@ -281,6 +278,10 @@ class Gemini(BaseLlm):
           for part in content.parts:
             _remove_display_name_if_present(part.inline_data)
             _remove_display_name_if_present(part.file_data)
+
+    # computer use model doesn't support system instruction
+    if llm_request.model.endswith('computer-use-exp'):
+      llm_request.config.system_instruction = None
 
 
 def _build_function_declaration_log(
