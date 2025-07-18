@@ -466,7 +466,7 @@ class BaseLlmFlow(ABC):
       function_call_event: Event,
       llm_request: LlmRequest,
   ) -> AsyncGenerator[Event, None]:
-    if function_response_event_generator := await functions.handle_function_calls_async(
+    if function_response_event_generator := functions.handle_function_calls_async(
         invocation_context, function_call_event, llm_request.tools_dict
     ):
       async for function_response_event in function_response_event_generator:
