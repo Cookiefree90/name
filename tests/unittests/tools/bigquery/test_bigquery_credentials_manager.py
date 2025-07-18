@@ -13,6 +13,7 @@
 # limitations under the License.
 
 
+import json
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -21,9 +22,10 @@ from google.adk.tools import ToolContext
 from google.adk.tools.bigquery.bigquery_credentials import BIGQUERY_TOKEN_CACHE_KEY
 from google.adk.tools.bigquery.bigquery_credentials import BigQueryCredentialsConfig
 from google.adk.tools.bigquery.bigquery_credentials import BigQueryCredentialsManager
+from google.auth.credentials import Credentials as AuthCredentials
 from google.auth.exceptions import RefreshError
 # Mock the Google OAuth and API dependencies
-from google.oauth2.credentials import Credentials
+from google.oauth2.credentials import Credentials as OAuthCredentials
 import pytest
 
 
@@ -63,9 +65,16 @@ class TestBigQueryCredentialsManager:
     """Create a credentials manager instance for testing."""
     return BigQueryCredentialsManager(credentials_config)
 
+  @pytest.mark.parametrize(
+      ("credentials_class",),
+      [
+          pytest.param(OAuthCredentials, id="oauth"),
+          pytest.param(AuthCredentials, id="auth"),
+      ],
+  )
   @pytest.mark.asyncio
   async def test_get_valid_credentials_with_valid_existing_creds(
-      self, manager, mock_tool_context
+      self, manager, mock_tool_context, credentials_class
   ):
     """Test that valid existing credentials are returned immediately.
 
@@ -73,8 +82,36 @@ class TestBigQueryCredentialsManager:
     should be needed. This is the optimal happy path scenario.
     """
     # Create mock credentials that are already valid
-    mock_creds = Mock(spec=Credentials)
+    mock_creds = Mock(spec=credentials_class)
     mock_creds.valid = True
+    manager.credentials_config.credentials = mock_creds
+
+    result = await manager.get_valid_credentials(mock_tool_context)
+
+    assert result == mock_creds
+    # Verify no OAuth flow was triggered
+    mock_tool_context.get_auth_response.assert_not_called()
+    mock_tool_context.request_credential.assert_not_called()
+
+  @pytest.mark.parametrize(
+      ("valid",),
+      [
+          pytest.param(False, id="invalid"),
+          pytest.param(True, id="valid"),
+      ],
+  )
+  @pytest.mark.asyncio
+  async def test_get_valid_credentials_with_existing_non_oauth_creds(
+      self, manager, mock_tool_context, valid
+  ):
+    """Test that existing non-oauth credentials are returned immediately.
+
+    When credentials are of non-oauth type, no refresh or OAuth flow
+    is triggered irrespective of whether it is valid or not.
+    """
+    # Create mock credentials that are already valid
+    mock_creds = Mock(spec=AuthCredentials)
+    mock_creds.valid = valid
     manager.credentials_config.credentials = mock_creds
 
     result = await manager.get_valid_credentials(mock_tool_context)
@@ -98,12 +135,12 @@ class TestBigQueryCredentialsManager:
     manager.credentials_config.credentials = None
 
     # Create mock cached credentials JSON that would be stored in cache
-    mock_cached_creds_json = {
+    mock_cached_creds_json = json.dumps({
         "token": "cached_token",
         "refresh_token": "cached_refresh_token",
         "client_id": "test_client_id",
         "client_secret": "test_client_secret",
-    }
+    })
 
     # Set up the tool context state to contain cached credentials
     mock_tool_context.state[BIGQUERY_TOKEN_CACHE_KEY] = mock_cached_creds_json
@@ -112,7 +149,7 @@ class TestBigQueryCredentialsManager:
     with patch(
         "google.oauth2.credentials.Credentials.from_authorized_user_info"
     ) as mock_from_json:
-      mock_creds = Mock(spec=Credentials)
+      mock_creds = Mock(spec=OAuthCredentials)
       mock_creds.valid = True
       mock_from_json.return_value = mock_creds
 
@@ -120,7 +157,7 @@ class TestBigQueryCredentialsManager:
 
       # Verify credentials were created from cached JSON
       mock_from_json.assert_called_once_with(
-          mock_cached_creds_json, manager.credentials_config.scopes
+          json.loads(mock_cached_creds_json), manager.credentials_config.scopes
       )
       # Verify loaded credentials were not cached into manager
       assert manager.credentials_config.credentials is None
@@ -160,25 +197,25 @@ class TestBigQueryCredentialsManager:
     manager.credentials_config.credentials = None
 
     # Create mock cached credentials JSON
-    mock_cached_creds_json = {
+    mock_cached_creds_json = json.dumps({
         "token": "expired_token",
         "refresh_token": "valid_refresh_token",
         "client_id": "test_client_id",
         "client_secret": "test_client_secret",
-    }
+    })
 
-    mock_refreshed_creds_json = {
+    mock_refreshed_creds_json = json.dumps({
         "token": "new_token",
         "refresh_token": "valid_refresh_token",
         "client_id": "test_client_id",
         "client_secret": "test_client_secret",
-    }
+    })
 
     # Set up the tool context state to contain cached credentials
     mock_tool_context.state[BIGQUERY_TOKEN_CACHE_KEY] = mock_cached_creds_json
 
     # Create expired cached credentials with refresh token
-    mock_cached_creds = Mock(spec=Credentials)
+    mock_cached_creds = Mock(spec=OAuthCredentials)
     mock_cached_creds.valid = False
     mock_cached_creds.expired = True
     mock_cached_creds.refresh_token = "valid_refresh_token"
@@ -200,7 +237,7 @@ class TestBigQueryCredentialsManager:
 
       # Verify credentials were created from cached JSON
       mock_from_json.assert_called_once_with(
-          mock_cached_creds_json, manager.credentials_config.scopes
+          json.loads(mock_cached_creds_json), manager.credentials_config.scopes
       )
       # Verify refresh was attempted and succeeded
       mock_cached_creds.refresh.assert_called_once()
@@ -209,7 +246,9 @@ class TestBigQueryCredentialsManager:
       # Verify refreshed credentials were cached
       assert (
           "new_token"
-          == mock_tool_context.state[BIGQUERY_TOKEN_CACHE_KEY]["token"]
+          == json.loads(mock_tool_context.state[BIGQUERY_TOKEN_CACHE_KEY])[
+              "token"
+          ]
       )
       assert result == mock_cached_creds
 
@@ -224,7 +263,7 @@ class TestBigQueryCredentialsManager:
     users from having to re-authenticate for every expired token.
     """
     # Create expired credentials with refresh token
-    mock_creds = Mock(spec=Credentials)
+    mock_creds = Mock(spec=OAuthCredentials)
     mock_creds.valid = False
     mock_creds.expired = True
     mock_creds.refresh_token = "refresh_token"
@@ -254,7 +293,7 @@ class TestBigQueryCredentialsManager:
     gracefully fall back to requesting a new OAuth flow.
     """
     # Create expired credentials that fail to refresh
-    mock_creds = Mock(spec=Credentials)
+    mock_creds = Mock(spec=OAuthCredentials)
     mock_creds.valid = False
     mock_creds.expired = True
     mock_creds.refresh_token = "expired_refresh_token"
@@ -284,7 +323,7 @@ class TestBigQueryCredentialsManager:
     mock_tool_context.get_auth_response.return_value = mock_auth_response
 
     # Create a mock credentials instance that will represent our created credentials
-    mock_creds = Mock(spec=Credentials)
+    mock_creds = Mock(spec=OAuthCredentials)
     # Make the JSON match what a real Credentials object would produce
     mock_creds_json = (
         '{"token": "new_access_token", "refresh_token": "new_refresh_token",'
@@ -297,7 +336,7 @@ class TestBigQueryCredentialsManager:
 
     # Use the full module path as it appears in the project structure
     with patch(
-        "google.adk.tools.bigquery.bigquery_credentials.Credentials",
+        "google.adk.tools.bigquery.bigquery_credentials.google.oauth2.credentials.Credentials",
         return_value=mock_creds,
     ) as mock_credentials_class:
       result = await manager.get_valid_credentials(mock_tool_context)
@@ -358,7 +397,7 @@ class TestBigQueryCredentialsManager:
     mock_tool_context.get_auth_response.return_value = mock_auth_response
 
     # Create the mock credentials instance that will be returned by the constructor
-    mock_creds = Mock(spec=Credentials)
+    mock_creds = Mock(spec=OAuthCredentials)
     # Make sure our mock JSON matches the structure that real Credentials objects produce
     mock_creds_json = (
         '{"token": "cached_access_token", "refresh_token":'
@@ -373,7 +412,7 @@ class TestBigQueryCredentialsManager:
 
     # Use the correct module path - without the 'src.' prefix
     with patch(
-        "google.adk.tools.bigquery.bigquery_credentials.Credentials",
+        "google.adk.tools.bigquery.bigquery_credentials.google.oauth2.credentials.Credentials",
         return_value=mock_creds,
     ) as mock_credentials_class:
       # Complete OAuth flow with first manager
@@ -393,9 +432,9 @@ class TestBigQueryCredentialsManager:
 
     # Mock the from_authorized_user_info method for the second manager
     with patch(
-        "google.adk.tools.bigquery.bigquery_credentials.Credentials.from_authorized_user_info"
+        "google.adk.tools.bigquery.bigquery_credentials.google.oauth2.credentials.Credentials.from_authorized_user_info"
     ) as mock_from_json:
-      mock_cached_creds = Mock(spec=Credentials)
+      mock_cached_creds = Mock(spec=OAuthCredentials)
       mock_cached_creds.valid = True
       mock_from_json.return_value = mock_cached_creds
 
