@@ -15,14 +15,20 @@
 from typing import Optional
 
 from google.adk.agents.base_agent import BaseAgent
+from google.adk.agents.invocation_context import InvocationContext
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.events.event import Event
-from google.adk.runners import _find_function_call_event_if_last_event_is_function_response
+from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.sessions.session import Session
 from google.genai import types
+import pytest
+
+TEST_APP_ID = "test_app"
+TEST_USER_ID = "test_user"
+TEST_SESSION_ID = "test_session"
 
 
 class MockAgent(BaseAgent):
@@ -73,174 +79,49 @@ class MockLlmAgent(LlmAgent):
     )
 
 
-class TestFindFunctionCallEventIfLastEventIsFunctionResponse:
-  """Tests for _find_function_call_event_if_last_event_is_function_response function."""
+class MockPlugin(BasePlugin):
+  """Mock plugin for unit testing."""
 
-  def test_no_function_response_in_last_event(self):
-    """Test when last event has no function response."""
-    session = Session(
-        id="test_session",
-        user_id="test_user",
-        app_name="test_app",
-        events=[
-            Event(
-                invocation_id="inv1",
-                author="user",
-                content=types.Content(
-                    role="user", parts=[types.Part(text="Hello")]
-                ),
-            )
-        ],
+  ON_USER_CALLBACK_MSG = (
+      "Modified user message ON_USER_CALLBACK_MSG from MockPlugin"
+  )
+  ON_EVENT_CALLBACK_MSG = "Modified event ON_EVENT_CALLBACK_MSG from MockPlugin"
+
+  def __init__(self):
+    super().__init__(name="mock_plugin")
+    self.enable_user_message_callback = False
+    self.enable_event_callback = False
+
+  async def on_user_message_callback(
+      self,
+      *,
+      invocation_context: InvocationContext,
+      user_message: types.Content,
+  ) -> Optional[types.Content]:
+    if not self.enable_user_message_callback:
+      return None
+    return types.Content(
+        role="model",
+        parts=[types.Part(text=self.ON_USER_CALLBACK_MSG)],
     )
 
-    result = _find_function_call_event_if_last_event_is_function_response(
-        session
-    )
-    assert result is None
-
-  def test_empty_session_events(self):
-    """Test when session has no events."""
-    session = Session(
-        id="test_session", user_id="test_user", app_name="test_app", events=[]
-    )
-
-    result = _find_function_call_event_if_last_event_is_function_response(
-        session
-    )
-    assert result is None
-
-  def test_last_event_has_function_response_but_no_matching_call(self):
-    """Test when last event has function response but no matching call found."""
-    # Create a function response
-    function_response = types.FunctionResponse(
-        id="func_123", name="test_func", response={}
-    )
-
-    session = Session(
-        id="test_session",
-        user_id="test_user",
-        app_name="test_app",
-        events=[
-            Event(
-                invocation_id="inv1",
-                author="agent1",
-                content=types.Content(
-                    role="model",
-                    parts=[types.Part(text="Some other response")],
-                ),
-            ),
-            Event(
-                invocation_id="inv2",
-                author="user",
-                content=types.Content(
-                    role="user",
-                    parts=[types.Part(function_response=function_response)],
-                ),
-            ),
-        ],
-    )
-
-    result = _find_function_call_event_if_last_event_is_function_response(
-        session
-    )
-    assert result is None
-
-  def test_last_event_has_function_response_with_matching_call(self):
-    """Test when last event has function response with matching function call."""
-    # Create a function call
-    function_call = types.FunctionCall(id="func_123", name="test_func", args={})
-
-    # Create a function response with matching ID
-    function_response = types.FunctionResponse(
-        id="func_123", name="test_func", response={}
-    )
-
-    call_event = Event(
-        invocation_id="inv1",
-        author="agent1",
+  async def on_event_callback(
+      self, *, invocation_context: InvocationContext, event: Event
+  ) -> Optional[Event]:
+    if not self.enable_event_callback:
+      return None
+    return Event(
+        invocation_id="",
+        author="",
         content=types.Content(
-            role="model", parts=[types.Part(function_call=function_call)]
-        ),
-    )
-
-    response_event = Event(
-        invocation_id="inv2",
-        author="user",
-        content=types.Content(
-            role="user", parts=[types.Part(function_response=function_response)]
-        ),
-    )
-
-    session = Session(
-        id="test_session",
-        user_id="test_user",
-        app_name="test_app",
-        events=[call_event, response_event],
-    )
-
-    result = _find_function_call_event_if_last_event_is_function_response(
-        session
-    )
-    assert result == call_event
-
-  def test_last_event_has_multiple_function_responses(self):
-    """Test when last event has multiple function responses."""
-    # Create function calls
-    function_call1 = types.FunctionCall(
-        id="func_123", name="test_func1", args={}
-    )
-    function_call2 = types.FunctionCall(
-        id="func_456", name="test_func2", args={}
-    )
-
-    # Create function responses
-    function_response1 = types.FunctionResponse(
-        id="func_123", name="test_func1", response={}
-    )
-    function_response2 = types.FunctionResponse(
-        id="func_456", name="test_func2", response={}
-    )
-
-    call_event1 = Event(
-        invocation_id="inv1",
-        author="agent1",
-        content=types.Content(
-            role="model", parts=[types.Part(function_call=function_call1)]
-        ),
-    )
-
-    call_event2 = Event(
-        invocation_id="inv2",
-        author="agent2",
-        content=types.Content(
-            role="model", parts=[types.Part(function_call=function_call2)]
-        ),
-    )
-
-    response_event = Event(
-        invocation_id="inv3",
-        author="user",
-        content=types.Content(
-            role="user",
             parts=[
-                types.Part(function_response=function_response1),
-                types.Part(function_response=function_response2),
+                types.Part(
+                    text=self.ON_EVENT_CALLBACK_MSG,
+                )
             ],
+            role=event.content.role,
         ),
     )
-
-    session = Session(
-        id="test_session",
-        user_id="test_user",
-        app_name="test_app",
-        events=[call_event1, call_event2, response_event],
-    )
-
-    # Should return the first matching function call event found
-    result = _find_function_call_event_if_last_event_is_function_response(
-        session
-    )
-    assert result == call_event1  # First match (func_123)
 
 
 class TestRunnerFindAgentToRun:
@@ -479,3 +360,73 @@ class TestRunnerFindAgentToRun:
     # MockAgent inherits from BaseAgent, not LlmAgent, so it should return False
     result = self.runner._is_transferable_across_agent_tree(non_llm_agent)
     assert result is False
+
+
+class TestRunnerWithPlugins:
+  """Tests for Runner with plugins."""
+
+  def setup_method(self):
+    self.plugin = MockPlugin()
+    self.session_service = InMemorySessionService()
+    self.artifact_service = InMemoryArtifactService()
+    self.root_agent = MockLlmAgent("root_agent")
+    self.runner = Runner(
+        app_name="test_app",
+        agent=MockLlmAgent("test_agent"),
+        session_service=self.session_service,
+        artifact_service=self.artifact_service,
+        plugins=[self.plugin],
+    )
+
+  async def run_test(self, original_user_input="Hello") -> list[Event]:
+    """Prepares the test by creating a session and running the runner."""
+    await self.session_service.create_session(
+        app_name=TEST_APP_ID, user_id=TEST_USER_ID, session_id=TEST_SESSION_ID
+    )
+    events = []
+    async for event in self.runner.run_async(
+        user_id=TEST_USER_ID,
+        session_id=TEST_SESSION_ID,
+        new_message=types.Content(
+            role="user", parts=[types.Part(text=original_user_input)]
+        ),
+    ):
+      events.append(event)
+    return events
+
+  @pytest.mark.asyncio
+  async def test_runner_is_initialized_with_plugins(self):
+    """Test that the runner is initialized with plugins."""
+    await self.run_test()
+
+    assert self.runner.plugin_manager is not None
+
+  @pytest.mark.asyncio
+  async def test_runner_modifies_user_message_before_execution(self):
+    """Test that the runner modifies the user message before execution."""
+    original_user_input = "original_input"
+    self.plugin.enable_user_message_callback = True
+
+    await self.run_test(original_user_input=original_user_input)
+    session = await self.session_service.get_session(
+        app_name=TEST_APP_ID, user_id=TEST_USER_ID, session_id=TEST_SESSION_ID
+    )
+    generated_event = session.events[0]
+    modified_user_message = generated_event.content.parts[0].text
+
+    assert modified_user_message == MockPlugin.ON_USER_CALLBACK_MSG
+
+  @pytest.mark.asyncio
+  async def test_runner_modifies_event_after_execution(self):
+    """Test that the runner modifies the event after execution."""
+    self.plugin.enable_event_callback = True
+
+    events = await self.run_test()
+    generated_event = events[0]
+    modified_event_message = generated_event.content.parts[0].text
+
+    assert modified_event_message == MockPlugin.ON_EVENT_CALLBACK_MSG
+
+
+if __name__ == "__main__":
+  pytest.main([__file__])
