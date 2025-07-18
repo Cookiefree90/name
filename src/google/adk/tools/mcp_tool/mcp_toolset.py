@@ -22,6 +22,8 @@ from typing import TextIO
 from typing import Union
 
 from ...agents.readonly_context import ReadonlyContext
+from ...auth.auth_credential import AuthCredential
+from ...auth.auth_schemes import AuthScheme
 from ..base_tool import BaseTool
 from ..base_toolset import BaseToolset
 from ..base_toolset import ToolPredicate
@@ -59,28 +61,27 @@ class MCPToolset(BaseToolset):
   that can be used by an agent. It properly implements the BaseToolset
   interface for easy integration with the agent framework.
 
-  Usage:
-  ```python
-  toolset = MCPToolset(
-      connection_params=StdioServerParameters(
-          command='npx',
-          args=["-y", "@modelcontextprotocol/server-filesystem"],
-      ),
-      tool_filter=['read_file', 'list_directory']  # Optional: filter specific tools
-  )
+  Usage::
 
-  # Use in an agent
-  agent = LlmAgent(
-      model='gemini-2.0-flash',
-      name='enterprise_assistant',
-      instruction='Help user accessing their file systems',
-      tools=[toolset],
-  )
+    toolset = MCPToolset(
+        connection_params=StdioServerParameters(
+            command='npx',
+            args=["-y", "@modelcontextprotocol/server-filesystem"],
+        ),
+        tool_filter=['read_file', 'list_directory']  # Optional: filter specific tools
+    )
 
-  # Cleanup is handled automatically by the agent framework
-  # But you can also manually close if needed:
-  # await toolset.close()
-  ```
+    # Use in an agent
+    agent = LlmAgent(
+        model='gemini-2.0-flash',
+        name='enterprise_assistant',
+        instruction='Help user accessing their file systems',
+        tools=[toolset],
+    )
+
+    # Cleanup is handled automatically by the agent framework
+    # But you can also manually close if needed:
+    # await toolset.close()
   """
 
   def __init__(
@@ -94,22 +95,26 @@ class MCPToolset(BaseToolset):
       ],
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       errlog: TextIO = sys.stderr,
+      auth_scheme: Optional[AuthScheme] = None,
+      auth_credential: Optional[AuthCredential] = None,
   ):
     """Initializes the MCPToolset.
 
     Args:
       connection_params: The connection parameters to the MCP server. Can be:
-        `StdioConnectionParams` for using local mcp server (e.g. using `npx` or
-        `python3`); or `SseConnectionParams` for a local/remote SSE server; or
-        `StreamableHTTPConnectionParams` for local/remote Streamable http
-        server. Note, `StdioServerParameters` is also supported for using local
-        mcp server (e.g. using `npx` or `python3` ), but it does not support
-        timeout, and we recommend to use `StdioConnectionParams` instead when
+        ``StdioConnectionParams`` for using local mcp server (e.g. using ``npx`` or
+        ``python3``); or ``SseConnectionParams`` for a local/remote SSE server; or
+        ``StreamableHTTPConnectionParams`` for local/remote Streamable http
+        server. Note, ``StdioServerParameters`` is also supported for using local
+        mcp server (e.g. using ``npx`` or ``python3`` ), but it does not support
+        timeout, and we recommend to use ``StdioConnectionParams`` instead when
         timeout is needed.
       tool_filter: Optional filter to select specific tools. Can be either: - A
         list of tool names to include - A ToolPredicate function for custom
         filtering logic
       errlog: TextIO stream for error logging.
+      auth_scheme: The auth scheme of the tool for tool calling
+      auth_credential: The auth credential of the tool for tool calling
     """
     super().__init__(tool_filter=tool_filter)
 
@@ -124,8 +129,10 @@ class MCPToolset(BaseToolset):
         connection_params=self._connection_params,
         errlog=self._errlog,
     )
+    self._auth_scheme = auth_scheme
+    self._auth_credential = auth_credential
 
-  @retry_on_closed_resource("_mcp_session_manager")
+  @retry_on_closed_resource
   async def get_tools(
       self,
       readonly_context: Optional[ReadonlyContext] = None,
@@ -151,6 +158,8 @@ class MCPToolset(BaseToolset):
       mcp_tool = MCPTool(
           mcp_tool=tool,
           mcp_session_manager=self._mcp_session_manager,
+          auth_scheme=self._auth_scheme,
+          auth_credential=self._auth_credential,
       )
 
       if self._is_tool_selected(mcp_tool, readonly_context):
