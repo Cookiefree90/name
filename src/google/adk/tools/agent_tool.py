@@ -23,15 +23,12 @@ from typing_extensions import override
 
 from . import _automatic_function_calling_util
 from ..memory.in_memory_memory_service import InMemoryMemoryService
-from ..runners import Runner
-from ..sessions.in_memory_session_service import InMemorySessionService
 from ._forwarding_artifact_service import ForwardingArtifactService
 from .base_tool import BaseTool
 from .tool_context import ToolContext
 
 if TYPE_CHECKING:
   from ..agents.base_agent import BaseAgent
-  from ..agents.llm_agent import LlmAgent
 
 
 class AgentTool(BaseTool):
@@ -61,6 +58,7 @@ class AgentTool(BaseTool):
   @override
   def _get_declaration(self) -> types.FunctionDeclaration:
     from ..agents.llm_agent import LlmAgent
+    from ..utils.variant_utils import GoogleLLMVariant
 
     if isinstance(self.agent, LlmAgent) and self.agent.input_schema:
       result = _automatic_function_calling_util.build_function_declaration(
@@ -80,6 +78,17 @@ class AgentTool(BaseTool):
           description=self.agent.description,
           name=self.name,
       )
+
+    # Set response schema for non-GEMINI_API variants
+    if self._api_variant != GoogleLLMVariant.GEMINI_API:
+      # Determine response type based on agent's output schema
+      if isinstance(self.agent, LlmAgent) and self.agent.output_schema:
+        # Agent has structured output schema - response is an object
+        result.response = types.Schema(type=types.Type.OBJECT)
+      else:
+        # Agent returns text - response is a string
+        result.response = types.Schema(type=types.Type.STRING)
+
     result.name = self.name
     return result
 
@@ -91,23 +100,14 @@ class AgentTool(BaseTool):
       tool_context: ToolContext,
   ) -> Any:
     from ..agents.llm_agent import LlmAgent
+    from ..runners import Runner
+    from ..sessions.in_memory_session_service import InMemorySessionService
 
     if self.skip_summarization:
       tool_context.actions.skip_summarization = True
 
     if isinstance(self.agent, LlmAgent) and self.agent.input_schema:
       input_value = self.agent.input_schema.model_validate(args)
-    else:
-      input_value = args['request']
-
-    if isinstance(self.agent, LlmAgent) and self.agent.input_schema:
-      if isinstance(input_value, dict):
-        input_value = self.agent.input_schema.model_validate(input_value)
-      if not isinstance(input_value, self.agent.input_schema):
-        raise ValueError(
-            f'Input value {input_value} is not of type'
-            f' `{self.agent.input_schema}`.'
-        )
       content = types.Content(
           role='user',
           parts=[
@@ -119,7 +119,7 @@ class AgentTool(BaseTool):
     else:
       content = types.Content(
           role='user',
-          parts=[types.Part.from_text(text=input_value)],
+          parts=[types.Part.from_text(text=args['request'])],
       )
     runner = Runner(
         app_name=self.agent.name,
@@ -127,6 +127,7 @@ class AgentTool(BaseTool):
         artifact_service=ForwardingArtifactService(tool_context),
         session_service=InMemorySessionService(),
         memory_service=InMemoryMemoryService(),
+        credential_service=tool_context._invocation_context.credential_service,
     )
     session = await runner.session_service.create_session(
         app_name=self.agent.name,
@@ -145,15 +146,11 @@ class AgentTool(BaseTool):
 
     if not last_event or not last_event.content or not last_event.content.parts:
       return ''
+    merged_text = '\n'.join(p.text for p in last_event.content.parts if p.text)
     if isinstance(self.agent, LlmAgent) and self.agent.output_schema:
-      merged_text = '\n'.join(
-          [p.text for p in last_event.content.parts if p.text]
-      )
       tool_result = self.agent.output_schema.model_validate_json(
           merged_text
       ).model_dump(exclude_none=True)
     else:
-      tool_result = '\n'.join(
-          [p.text for p in last_event.content.parts if p.text]
-      )
+      tool_result = merged_text
     return tool_result
