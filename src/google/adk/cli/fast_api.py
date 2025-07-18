@@ -20,6 +20,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import time
 import traceback
 import typing
@@ -32,6 +33,7 @@ import click
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
@@ -77,6 +79,7 @@ from ..sessions.database_session_service import DatabaseSessionService
 from ..sessions.in_memory_session_service import InMemorySessionService
 from ..sessions.session import Session
 from ..sessions.vertex_ai_session_service import VertexAiSessionService
+from ..utils.feature_decorator import working_in_progress
 from .cli_eval import EVAL_SESSION_ID_PREFIX
 from .cli_eval import EvalStatus
 from .utils import cleanup
@@ -175,6 +178,7 @@ class AgentRunRequest(common.BaseModel):
   session_id: str
   new_message: types.Content
   streaming: bool = False
+  state_delta: Optional[dict[str, Any]] = None
 
 
 class AddSessionToEvalSetRequest(common.BaseModel):
@@ -293,6 +297,31 @@ def get_fast_api_app(
     eval_sets_manager = LocalEvalSetsManager(agents_dir=agents_dir)
     eval_set_results_manager = LocalEvalSetResultsManager(agents_dir=agents_dir)
 
+  def _parse_agent_engine_resource_name(agent_engine_id_or_resource_name):
+    if not agent_engine_id_or_resource_name:
+      raise click.ClickException(
+          "Agent engine resource name or resource id can not be empty."
+      )
+
+    # "projects/my-project/locations/us-central1/reasoningEngines/1234567890",
+    if "/" in agent_engine_id_or_resource_name:
+      # Validate resource name.
+      if len(agent_engine_id_or_resource_name.split("/")) != 6:
+        raise click.ClickException(
+            "Agent engine resource name is mal-formatted. It should be of"
+            " format :"
+            " projects/{project_id}/locations/{location}/reasoningEngines/{resource_id}"
+        )
+      project = agent_engine_id_or_resource_name.split("/")[1]
+      location = agent_engine_id_or_resource_name.split("/")[3]
+      agent_engine_id = agent_engine_id_or_resource_name.split("/")[-1]
+    else:
+      envs.load_dotenv_for_agent("", agents_dir)
+      project = os.environ["GOOGLE_CLOUD_PROJECT"]
+      location = os.environ["GOOGLE_CLOUD_LOCATION"]
+      agent_engine_id = agent_engine_id_or_resource_name
+    return project, location, agent_engine_id
+
   # Build the Memory service
   if memory_service_uri:
     if memory_service_uri.startswith("rag://"):
@@ -304,13 +333,13 @@ def get_fast_api_app(
           rag_corpus=f'projects/{os.environ["GOOGLE_CLOUD_PROJECT"]}/locations/{os.environ["GOOGLE_CLOUD_LOCATION"]}/ragCorpora/{rag_corpus}'
       )
     elif memory_service_uri.startswith("agentengine://"):
-      agent_engine_id = memory_service_uri.split("://")[1]
-      if not agent_engine_id:
-        raise click.ClickException("Agent engine id can not be empty.")
-      envs.load_dotenv_for_agent("", agents_dir)
+      agent_engine_id_or_resource_name = memory_service_uri.split("://")[1]
+      project, location, agent_engine_id = _parse_agent_engine_resource_name(
+          agent_engine_id_or_resource_name
+      )
       memory_service = VertexAiMemoryBankService(
-          project=os.environ["GOOGLE_CLOUD_PROJECT"],
-          location=os.environ["GOOGLE_CLOUD_LOCATION"],
+          project=project,
+          location=location,
           agent_engine_id=agent_engine_id,
       )
     else:
@@ -323,14 +352,13 @@ def get_fast_api_app(
   # Build the Session service
   if session_service_uri:
     if session_service_uri.startswith("agentengine://"):
-      # Create vertex session service
-      agent_engine_id = session_service_uri.split("://")[1]
-      if not agent_engine_id:
-        raise click.ClickException("Agent engine id can not be empty.")
-      envs.load_dotenv_for_agent("", agents_dir)
+      agent_engine_id_or_resource_name = session_service_uri.split("://")[1]
+      project, location, agent_engine_id = _parse_agent_engine_resource_name(
+          agent_engine_id_or_resource_name
+      )
       session_service = VertexAiSessionService(
-          project=os.environ["GOOGLE_CLOUD_PROJECT"],
-          location=os.environ["GOOGLE_CLOUD_LOCATION"],
+          project=project,
+          location=location,
           agent_engine_id=agent_engine_id,
       )
     else:
@@ -513,7 +541,11 @@ def get_fast_api_app(
   )
   def list_eval_sets(app_name: str) -> list[str]:
     """Lists all eval sets for the given app."""
-    return eval_sets_manager.list_eval_sets(app_name)
+    try:
+      return eval_sets_manager.list_eval_sets(app_name)
+    except NotFoundError as e:
+      logger.warning(e)
+      return []
 
   @app.post(
       "/apps/{app_name}/eval_sets/{eval_set_id}/add_session",
@@ -803,6 +835,33 @@ def get_fast_api_app(
         filename=artifact_name,
     )
 
+  @working_in_progress("builder_save is not ready for use.")
+  @app.post("/builder/save", response_model_exclude_none=True)
+  async def builder_build(files: list[UploadFile]) -> bool:
+    base_path = Path.cwd() / agents_dir
+
+    for file in files:
+      try:
+        # File name format: {app_name}/{agent_name}.yaml
+        if not file.filename:
+          logger.exception("Agent name is missing in the input files")
+          return False
+
+        agent_name, filename = file.filename.split("/")
+
+        agent_dir = os.path.join(base_path, agent_name)
+        os.makedirs(agent_dir, exist_ok=True)
+        file_path = os.path.join(agent_dir, filename)
+
+        with open(file_path, "w") as buffer:
+          shutil.copyfileobj(file.file, buffer)
+
+      except Exception as e:
+        logger.exception("Error in builder_build: %s", e)
+        return False
+
+    return True
+
   @app.post("/run", response_model_exclude_none=True)
   async def agent_run(req: AgentRunRequest) -> list[Event]:
     session = await session_service.get_session(
@@ -840,6 +899,7 @@ def get_fast_api_app(
             user_id=req.user_id,
             session_id=req.session_id,
             new_message=req.new_message,
+            state_delta=req.state_delta,
             run_config=RunConfig(streaming_mode=stream_mode),
         ):
           # Format as SSE data
@@ -1003,6 +1063,7 @@ def get_fast_api_app(
       from a2a.server.request_handlers import DefaultRequestHandler
       from a2a.server.tasks import InMemoryTaskStore
       from a2a.types import AgentCard
+      from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 
       from ..a2a.executor.a2a_agent_executor import A2aAgentExecutor
 
@@ -1066,7 +1127,7 @@ def get_fast_api_app(
 
           routes = a2a_app.routes(
               rpc_url=f"/a2a/{app_name}",
-              agent_card_url=f"/a2a/{app_name}/.well-known/agent.json",
+              agent_card_url=f"/a2a/{app_name}{AGENT_CARD_WELL_KNOWN_PATH}",
           )
 
           for new_route in routes:
