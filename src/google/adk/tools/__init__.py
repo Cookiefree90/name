@@ -14,6 +14,7 @@
 
 
 from ..auth.auth_tool import AuthToolArguments
+from .agent_tool import AgentTool
 from .apihub_tool.apihub_toolset import APIHubToolset
 from .base_tool import BaseTool
 from .example_tool import ExampleTool
@@ -27,13 +28,16 @@ from .long_running_tool import LongRunningFunctionTool
 from .preload_memory_tool import preload_memory_tool as preload_memory
 from .tool_context import ToolContext
 from .transfer_to_agent_tool import transfer_to_agent
+from .url_context_tool import url_context
 from .vertex_ai_search_tool import VertexAiSearchTool
 
 __all__ = [
+    'AgentTool',
     'APIHubToolset',
     'AuthToolArguments',
     'BaseTool',
     'google_search',
+    'url_context',
     'VertexAiSearchTool',
     'ExampleTool',
     'exit_loop',
