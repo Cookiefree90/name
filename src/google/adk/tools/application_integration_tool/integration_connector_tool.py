@@ -45,13 +45,12 @@ class IntegrationConnectorTool(BaseTool):
   * Generates request params and body
   * Attaches auth credentials to API call.
 
-  Example:
-  ```
+  Example::
+
     # Each API operation in the spec will be turned into its own tool
     # Name of the tool is the operationId of that operation, in snake case
     operations = OperationGenerator().parse(openapi_spec_dict)
     tool = [RestApiTool.from_parsed_operation(o) for o in operations]
-  ```
   """
 
   EXCLUDE_FIELDS = [
@@ -64,11 +63,7 @@ class IntegrationConnectorTool(BaseTool):
       'dynamic_auth_config',
   ]
 
-  OPTIONAL_FIELDS = [
-      'page_size',
-      'page_token',
-      'filter',
-  ]
+  OPTIONAL_FIELDS = ['page_size', 'page_token', 'filter', 'sortByColumns']
 
   def __init__(
       self,
@@ -154,7 +149,7 @@ class IntegrationConnectorTool(BaseTool):
     tool_auth_handler = ToolAuthHandler.from_tool_context(
         tool_context, self._auth_scheme, self._auth_credential
     )
-    auth_result = tool_auth_handler.prepare_auth_credentials()
+    auth_result = await tool_auth_handler.prepare_auth_credentials()
 
     if auth_result.state == 'pending':
       return {
@@ -182,7 +177,7 @@ class IntegrationConnectorTool(BaseTool):
     args['operation'] = self._operation
     args['action'] = self._action
     logger.info('Running tool: %s with args: %s', self.name, args)
-    return self._rest_api_tool.call(args=args, tool_context=tool_context)
+    return await self._rest_api_tool.call(args=args, tool_context=tool_context)
 
   def __str__(self):
     return (
