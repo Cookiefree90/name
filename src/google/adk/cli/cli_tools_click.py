@@ -461,7 +461,10 @@ def adk_services_options():
         "--session_service_uri",
         help=(
             """Optional. The URI of the session service.
-          - Use 'agentengine://<agent_engine_resource_id>' to connect to Agent Engine sessions.
+          - Use 'agentengine://<agent_engine>' to connect to Agent Engine
+            sessions. <agent_engine> can either be the full qualified resource
+            name 'projects/abc/locations/us-central1/reasoningEngines/123' or
+            the resource id '123'.
           - Use 'sqlite://<path_to_sqlite_file>' to connect to a SQLite DB.
           - See https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls for more details on supported database URIs."""
         ),
@@ -487,11 +490,12 @@ def adk_services_options():
     @click.option(
         "--memory_service_uri",
         type=str,
-        help=(
-            """Optional. The URI of the memory service.
+        help=("""Optional. The URI of the memory service.
             - Use 'rag://<rag_corpus_id>' to connect to Vertex AI Rag Memory Service.
-            - Use 'agentengine://<agent_engine_resource_id>' to connect to Vertex AI Memory Bank Service. e.g. agentengine://12345"""
-        ),
+            - Use 'agentengine://<agent_engine>' to connect to Agent Engine
+              sessions. <agent_engine> can either be the full qualified resource
+              name 'projects/abc/locations/us-central1/reasoningEngines/123' or
+              the resource id '123'."""),
         default=None,
     )
     @functools.wraps(func)
@@ -583,6 +587,13 @@ def fast_api_common_options():
         default=False,
         help="Optional. Whether to enable A2A endpoint.",
     )
+    @click.option(
+        "--reload_agents",
+        is_flag=True,
+        default=False,
+        show_default=True,
+        help="Optional. Whether to enable live reload for agents changes.",
+    )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
       return func(*args, **kwargs)
@@ -625,6 +636,7 @@ def cli_web(
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
     a2a: bool = False,
+    reload_agents: bool = False,
 ):
   """Starts a FastAPI server with Web UI for agents.
 
@@ -674,6 +686,7 @@ def cli_web(
       a2a=a2a,
       host=host,
       port=port,
+      reload_agents=reload_agents,
   )
   config = uvicorn.Config(
       app,
@@ -721,6 +734,7 @@ def cli_api_server(
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
     a2a: bool = False,
+    reload_agents: bool = False,
 ):
   """Starts a FastAPI server for agents.
 
@@ -748,6 +762,7 @@ def cli_api_server(
           a2a=a2a,
           host=host,
           port=port,
+          reload_agents=reload_agents,
       ),
       host=host,
       port=port,
@@ -831,15 +846,6 @@ def cli_api_server(
         " version in the dev environment)"
     ),
 )
-@click.option(
-    "--eval_storage_uri",
-    type=str,
-    help=(
-        "Optional. The evals storage URI to store agent evals,"
-        " supported URIs: gs://<bucket name>."
-    ),
-    default=None,
-)
 @adk_services_options()
 @deprecated_adk_services_options()
 @click.argument(
@@ -870,6 +876,7 @@ def cli_deploy_cloud_run(
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
     a2a: bool = False,
+    reload_agents: bool = False,
 ):
   """Deploys an agent to Cloud Run.
 
