@@ -106,9 +106,9 @@ def test_enum_input():
   from enum import Enum
 
   class Color(str, Enum):
-    RED = "red"
-    GREEN = "green"
-    BLUE = "blue"
+    RED = 'red'
+    GREEN = 'green'
+    BLUE = 'blue'
 
   def simple_function(input_str: Color) -> str:
     return {'result': input_str}

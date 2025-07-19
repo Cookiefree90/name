@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
+from enum import Enum
 import inspect
 import logging
 import types as typing_types
-from enum import Enum
 from typing import _GenericAlias
 from typing import Any
 from typing import get_args
