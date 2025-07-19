@@ -377,6 +377,12 @@ class RestApiTool(BaseTool):
 
     # Attach parameters from auth into main parameters list
     api_params, api_args = self._operation_parser.get_parameters().copy(), args
+
+    # add any required arguments that are missing and have defaults: 
+    for api_param in api_params:
+      if api_param.required and api_param.param_schema.default:
+        api_args[api_param.py_name]=api_param.param_schema.default    
+
     if auth_credential:
       # Attach parameters from auth into main parameters list
       auth_param, auth_args = self._prepare_auth_request_params(
