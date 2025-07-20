@@ -69,7 +69,7 @@ from ..evaluation.eval_metrics import EvalMetricResultPerInvocation
 from ..evaluation.eval_result import EvalSetResult
 from ..evaluation.local_eval_set_results_manager import LocalEvalSetResultsManager
 from ..evaluation.local_eval_sets_manager import LocalEvalSetsManager
-from ..events.event import Event
+from ..events.event import Event, EventActions
 from ..memory.in_memory_memory_service import InMemoryMemoryService
 from ..memory.vertex_ai_memory_bank_service import VertexAiMemoryBankService
 from ..runners import Runner
@@ -520,6 +520,33 @@ def get_fast_api_app(
         app_name,
         eval_set_id + _EVAL_SET_FILE_EXTENSION,
     )
+
+  @app.put(
+      "/apps/{app_name}/users/{user_id}/sessions/{session_id}",
+      response_model_exclude_none=True,
+  )
+  async def update_session_state(
+      app_name: str,
+      user_id: str,
+      session_id: str,
+      state: Optional[dict[str, Any]] = None,
+  ) -> Session:
+    session = await session_service.get_session(
+        app_name=app_name, user_id=user_id, session_id=session_id
+    )
+    current_time = time.time()
+    actions_with_update = EventActions(state_delta=state)
+    system_event = Event(
+        invocation_id="state_update",
+        author="system",
+        actions=actions_with_update,
+        timestamp=current_time,
+    )
+    await session_service.append_event(session, system_event)
+    updated_session = await session_service.get_session(
+        app_name=app_name, user_id=user_id, session_id=session_id
+    )
+    return updated_session
 
   @app.post(
       "/apps/{app_name}/eval_sets/{eval_set_id}",
