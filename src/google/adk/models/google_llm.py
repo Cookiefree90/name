@@ -190,7 +190,10 @@ class Gemini(BaseLlm):
       The api client.
     """
     return Client(
-        http_options=types.HttpOptions(headers=self._tracking_headers)
+        http_options=types.HttpOptions(
+            headers=self._tracking_headers,
+            retry_options=types.HttpRetryOptions(),
+        ),  # Enable retries.
     )
 
   @cached_property
