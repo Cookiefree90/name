@@ -43,7 +43,6 @@ from fastapi.websockets import WebSocketDisconnect
 from google.genai import types
 import graphviz
 from opentelemetry import trace
-from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 from opentelemetry.sdk.trace import export
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace import TracerProvider
@@ -73,9 +72,7 @@ from ..evaluation.local_eval_sets_manager import LocalEvalSetsManager
 from ..events.event import Event
 from ..memory.in_memory_memory_service import InMemoryMemoryService
 from ..memory.vertex_ai_memory_bank_service import VertexAiMemoryBankService
-from ..memory.vertex_ai_rag_memory_service import VertexAiRagMemoryService
 from ..runners import Runner
-from ..sessions.database_session_service import DatabaseSessionService
 from ..sessions.in_memory_session_service import InMemorySessionService
 from ..sessions.session import Session
 from ..sessions.vertex_ai_session_service import VertexAiSessionService
@@ -241,6 +238,8 @@ def get_fast_api_app(
   memory_exporter = InMemoryExporter(session_trace_dict)
   provider.add_span_processor(export.SimpleSpanProcessor(memory_exporter))
   if trace_to_cloud:
+    from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+
     envs.load_dotenv_for_agent("", agents_dir)
     if project_id := os.environ.get("GOOGLE_CLOUD_PROJECT", None):
       processor = export.BatchSpanProcessor(
@@ -297,9 +296,36 @@ def get_fast_api_app(
     eval_sets_manager = LocalEvalSetsManager(agents_dir=agents_dir)
     eval_set_results_manager = LocalEvalSetResultsManager(agents_dir=agents_dir)
 
+  def _parse_agent_engine_resource_name(agent_engine_id_or_resource_name):
+    if not agent_engine_id_or_resource_name:
+      raise click.ClickException(
+          "Agent engine resource name or resource id can not be empty."
+      )
+
+    # "projects/my-project/locations/us-central1/reasoningEngines/1234567890",
+    if "/" in agent_engine_id_or_resource_name:
+      # Validate resource name.
+      if len(agent_engine_id_or_resource_name.split("/")) != 6:
+        raise click.ClickException(
+            "Agent engine resource name is mal-formatted. It should be of"
+            " format :"
+            " projects/{project_id}/locations/{location}/reasoningEngines/{resource_id}"
+        )
+      project = agent_engine_id_or_resource_name.split("/")[1]
+      location = agent_engine_id_or_resource_name.split("/")[3]
+      agent_engine_id = agent_engine_id_or_resource_name.split("/")[-1]
+    else:
+      envs.load_dotenv_for_agent("", agents_dir)
+      project = os.environ["GOOGLE_CLOUD_PROJECT"]
+      location = os.environ["GOOGLE_CLOUD_LOCATION"]
+      agent_engine_id = agent_engine_id_or_resource_name
+    return project, location, agent_engine_id
+
   # Build the Memory service
   if memory_service_uri:
     if memory_service_uri.startswith("rag://"):
+      from ..memory.vertex_ai_rag_memory_service import VertexAiRagMemoryService
+
       rag_corpus = memory_service_uri.split("://")[1]
       if not rag_corpus:
         raise click.ClickException("Rag corpus can not be empty.")
@@ -308,13 +334,13 @@ def get_fast_api_app(
           rag_corpus=f'projects/{os.environ["GOOGLE_CLOUD_PROJECT"]}/locations/{os.environ["GOOGLE_CLOUD_LOCATION"]}/ragCorpora/{rag_corpus}'
       )
     elif memory_service_uri.startswith("agentengine://"):
-      agent_engine_id = memory_service_uri.split("://")[1]
-      if not agent_engine_id:
-        raise click.ClickException("Agent engine id can not be empty.")
-      envs.load_dotenv_for_agent("", agents_dir)
+      agent_engine_id_or_resource_name = memory_service_uri.split("://")[1]
+      project, location, agent_engine_id = _parse_agent_engine_resource_name(
+          agent_engine_id_or_resource_name
+      )
       memory_service = VertexAiMemoryBankService(
-          project=os.environ["GOOGLE_CLOUD_PROJECT"],
-          location=os.environ["GOOGLE_CLOUD_LOCATION"],
+          project=project,
+          location=location,
           agent_engine_id=agent_engine_id,
       )
     else:
@@ -327,17 +353,18 @@ def get_fast_api_app(
   # Build the Session service
   if session_service_uri:
     if session_service_uri.startswith("agentengine://"):
-      # Create vertex session service
-      agent_engine_id = session_service_uri.split("://")[1]
-      if not agent_engine_id:
-        raise click.ClickException("Agent engine id can not be empty.")
-      envs.load_dotenv_for_agent("", agents_dir)
+      agent_engine_id_or_resource_name = session_service_uri.split("://")[1]
+      project, location, agent_engine_id = _parse_agent_engine_resource_name(
+          agent_engine_id_or_resource_name
+      )
       session_service = VertexAiSessionService(
-          project=os.environ["GOOGLE_CLOUD_PROJECT"],
-          location=os.environ["GOOGLE_CLOUD_LOCATION"],
+          project=project,
+          location=location,
           agent_engine_id=agent_engine_id,
       )
     else:
+      from ..sessions.database_session_service import DatabaseSessionService
+
       session_service = DatabaseSessionService(db_url=session_service_uri)
   else:
     session_service = InMemorySessionService()
@@ -1133,7 +1160,9 @@ def get_fast_api_app(
 
     app.mount(
         "/dev-ui/",
-        StaticFiles(directory=ANGULAR_DIST_PATH, html=True),
+        StaticFiles(
+            directory=ANGULAR_DIST_PATH, html=True, follow_symlink=True
+        ),
         name="static",
     )
   return app
