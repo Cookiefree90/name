@@ -21,13 +21,22 @@ import logging
 import os
 import sys
 from typing import AsyncGenerator
+from typing import Callable
 from typing import cast
+from typing import Optional
 from typing import TYPE_CHECKING
 from typing import Union
 
 from google.genai import Client
 from google.genai import types
+from google.genai.errors import ClientError
+from google.genai.errors import ServerError
 from google.genai.types import FinishReason
+from pydantic import BaseModel
+from tenacity import retry
+from tenacity import retry_if_exception
+from tenacity import stop_after_attempt
+from tenacity import wait_exponential
 from typing_extensions import override
 
 from .. import version
@@ -48,6 +57,48 @@ _AGENT_ENGINE_TELEMETRY_TAG = 'remote_reasoning_engine'
 _AGENT_ENGINE_TELEMETRY_ENV_VARIABLE_NAME = 'GOOGLE_CLOUD_AGENT_ENGINE_ID'
 
 
+class RetryConfig(BaseModel):
+  """Config for controlling retry behavior during model execution.
+
+  Use this config in agent.model. Example:
+  ```
+  agent = Agent(
+      model=Gemini(
+          retry_config=RetryConfig(initial_delay_sec=10, max_retries=3)
+      ),
+      ...
+  )
+  ```
+  """
+
+  initial_delay_sec: int = 5
+  """The initial delay before the first retry, in seconds."""
+
+  expo_base: int = 2
+  """The exponential base to add to the retry delay."""
+
+  max_delay_sec: int = 60
+  """The maximum delay before the next retry, in seconds."""
+
+  max_retries: int = 5
+  """The maximum number of retries."""
+
+  retry_predicate: Callable[[Exception], bool] = None
+  """The predicate function to determine if the error is retryable."""
+
+
+def retry_on_resumable_error(error: Exception) -> bool:
+  """Returns True if the error is non-retryable."""
+  # Retry on Resource exhausted error
+  if isinstance(error, ClientError) and error.code == 429:
+    return True
+
+  # Retry on Service unavailable error
+  if isinstance(error, ServerError) and error.code == 503:
+    return True
+  return False
+
+
 class Gemini(BaseLlm):
   """Integration for Gemini models.
 
@@ -56,6 +107,9 @@ class Gemini(BaseLlm):
   """
 
   model: str = 'gemini-1.5-flash'
+
+  retry_config: Optional[RetryConfig] = RetryConfig()
+  """Use default retry config to retry on resumable model errors."""
 
   @staticmethod
   @override
@@ -106,7 +160,11 @@ class Gemini(BaseLlm):
       llm_request.config.http_options.headers.update(self._tracking_headers)
 
     if stream:
-      responses = await self.api_client.aio.models.generate_content_stream(
+      retry_annotation = self._build_retry_wrapper()
+      retryable_generate = retry_annotation(
+          self.api_client.aio.models.generate_content_stream
+      )
+      responses = await retryable_generate(
           model=llm_request.model,
           contents=llm_request.contents,
           config=llm_request.config,
@@ -174,7 +232,11 @@ class Gemini(BaseLlm):
         )
 
     else:
-      response = await self.api_client.aio.models.generate_content(
+      retry_annotation = self._build_retry_wrapper()
+      retryable_generate = retry_annotation(
+          self.api_client.aio.models.generate_content
+      )
+      response = await retryable_generate(
           model=llm_request.model,
           contents=llm_request.contents,
           config=llm_request.config,
@@ -283,6 +345,31 @@ class Gemini(BaseLlm):
           for part in content.parts:
             _remove_display_name_if_present(part.inline_data)
             _remove_display_name_if_present(part.file_data)
+
+  def _build_retry_wrapper(self) -> retry:
+    """Apply retry logic to the Gemini API client.
+
+    Underlyingly this returns a tenacity.retry annotation that can be applied
+    to any function. Works for async functions as well.
+
+    Returns:
+      A tenacity.retry annotation that can be applied to any function.
+    """
+    # Use default retry config if not specified.
+    config = self.retry_config or RetryConfig()
+    retry_predicate = config.retry_predicate
+    if not retry_predicate:
+      retry_predicate = retry_if_exception(retry_on_resumable_error)
+    return retry(
+        stop=stop_after_attempt(config.max_retries),
+        wait=wait_exponential(
+            multiplier=config.initial_delay_sec,
+            min=config.initial_delay_sec,
+            max=config.max_delay_sec,
+        ),
+        retry=retry_predicate,
+        reraise=True,
+    )
 
 
 def _build_function_declaration_log(
