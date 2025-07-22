@@ -15,9 +15,9 @@
 import random
 
 from google.adk import Agent
-from google.adk.agents.callback_context import CallbackContext
-from google.adk.models import LlmRequest
+from google.adk.a2a.utils.agent_to_a2a import to_a2a
 from google.adk.tools.tool_context import ToolContext
+from google.genai import types
 
 
 def roll_die(sides: int, tool_context: ToolContext) -> int:
@@ -25,7 +25,7 @@ def roll_die(sides: int, tool_context: ToolContext) -> int:
 
   Args:
     sides: The integer number of sides the die has.
-
+    tool_context: the tool context
   Returns:
     An integer of the result of rolling the die.
   """
@@ -65,33 +65,11 @@ async def check_prime(nums: list[int]) -> str:
   )
 
 
-def create_slice_history_callback(n_recent_turns):
-  async def before_model_callback(
-      callback_context: CallbackContext, llm_request: LlmRequest
-  ):
-    if n_recent_turns < 1:
-      return
-
-    user_indexes = [
-        i
-        for i, content in enumerate(llm_request.contents)
-        if content.role == 'user'
-    ]
-
-    if n_recent_turns > len(user_indexes):
-      return
-
-    suffix_idx = user_indexes[-n_recent_turns]
-    llm_request.contents = llm_request.contents[suffix_idx:]
-
-  return before_model_callback
-
-
 root_agent = Agent(
     model='gemini-2.0-flash',
-    name='short_history_agent',
+    name='hello_world_agent',
     description=(
-        'an agent that maintains only the last turn in its context window.'
+        'hello world agent that can roll a dice of 8 sides and check prime'
         ' numbers.'
     ),
     instruction="""
@@ -111,6 +89,23 @@ root_agent = Agent(
       You should always perform the previous 3 steps when asking for a roll and checking prime numbers.
       You should not rely on the previous history on prime results.
     """,
-    tools=[roll_die, check_prime],
-    before_model_callback=create_slice_history_callback(n_recent_turns=2),
+    tools=[
+        roll_die,
+        check_prime,
+    ],
+    # planner=BuiltInPlanner(
+    #     thinking_config=types.ThinkingConfig(
+    #         include_thoughts=True,
+    #     ),
+    # ),
+    generate_content_config=types.GenerateContentConfig(
+        safety_settings=[
+            types.SafetySetting(  # avoid false alarm about rolling dice.
+                category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                threshold=types.HarmBlockThreshold.OFF,
+            ),
+        ]
+    ),
 )
+
+a2a_app = to_a2a(root_agent, port=8001)
