@@ -15,6 +15,7 @@
 import random
 
 from google.adk import Agent
+from google.adk.a2a.utils.agent_to_a2a import to_a2a
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 
@@ -24,7 +25,7 @@ def roll_die(sides: int, tool_context: ToolContext) -> int:
 
   Args:
     sides: The integer number of sides the die has.
-
+    tool_context: the tool context
   Returns:
     An integer of the result of rolling the die.
   """
@@ -106,3 +107,5 @@ root_agent = Agent(
         ]
     ),
 )
+
+a2a_app = to_a2a(root_agent, port=8001)

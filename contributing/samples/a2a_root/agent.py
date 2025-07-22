@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .tool_context import ToolContext
+from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 
-
-def exit_loop(tool_context: ToolContext):
-  """Exits the loop.
-
-  Call this function only when you are instructed to do so.
-  """
-  tool_context.actions.escalate = True
-  tool_context.actions.skip_summarization = True
+root_agent = RemoteA2aAgent(
+    name="hello_world_agent",
+    description=(
+        "Helpful assistant that can roll dice and check if numbers are prime."
+    ),
+    agent_card=f"http://localhost:8001/{AGENT_CARD_WELL_KNOWN_PATH}",
+)
