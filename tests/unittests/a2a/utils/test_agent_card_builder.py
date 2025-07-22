@@ -107,7 +107,6 @@ class TestAgentCardBuilder:
     assert builder._agent == mock_agent
     assert builder._rpc_url == "http://localhost:80/a2a"
     assert isinstance(builder._capabilities, AgentCapabilities)
-    assert builder._doc_url is None
     assert builder._provider is None
     assert builder._security_schemes is None
     assert builder._agent_version == "0.0.1"
@@ -126,7 +125,6 @@ class TestAgentCardBuilder:
         agent=mock_agent,
         rpc_url="https://example.com/a2a",
         capabilities=mock_capabilities,
-        doc_url="https://docs.example.com",
         provider=mock_provider,
         agent_version="1.2.3",
         security_schemes=mock_security_schemes,
@@ -136,7 +134,6 @@ class TestAgentCardBuilder:
     assert builder._agent == mock_agent
     assert builder._rpc_url == "https://example.com/a2a"
     assert builder._capabilities == mock_capabilities
-    assert builder._doc_url == "https://docs.example.com"
     assert builder._provider == mock_provider
     assert builder._security_schemes == mock_security_schemes
     assert builder._agent_version == "1.2.3"
@@ -181,15 +178,14 @@ class TestAgentCardBuilder:
     assert isinstance(result, AgentCard)
     assert result.name == "test_agent"
     assert result.description == "Test agent description"
-    assert result.documentationUrl is None
     assert result.url == "http://localhost:80/a2a"
     assert result.version == "0.0.1"
     assert result.skills == [mock_primary_skill, mock_sub_skill]
-    assert result.defaultInputModes == ["text/plain"]
-    assert result.defaultOutputModes == ["text/plain"]
-    assert result.supportsAuthenticatedExtendedCard is False
+    assert result.default_input_modes == ["text/plain"]
+    assert result.default_output_modes == ["text/plain"]
+    assert result.supports_authenticated_extended_card is False
     assert result.provider is None
-    assert result.securitySchemes is None
+    assert result.security_schemes is None
 
   @patch("google.adk.a2a.utils.agent_card_builder._build_primary_skills")
   @patch("google.adk.a2a.utils.agent_card_builder._build_sub_agent_skills")
@@ -213,7 +209,6 @@ class TestAgentCardBuilder:
     builder = AgentCardBuilder(
         agent=mock_agent,
         rpc_url="https://example.com/a2a/",
-        doc_url="https://docs.example.com",
         provider=mock_provider,
         agent_version="2.0.0",
         security_schemes=mock_security_schemes,
@@ -225,15 +220,12 @@ class TestAgentCardBuilder:
     # Assert
     assert result.name == "test_agent"
     assert result.description == "An ADK Agent"  # Default description
-    # The source code uses doc_url parameter but AgentCard expects documentationUrl
-    # Since the source code doesn't map doc_url to documentationUrl, it will be None
-    assert result.documentationUrl is None
     assert (
         result.url == "https://example.com/a2a"
     )  # Should strip trailing slash
     assert result.version == "2.0.0"
     assert result.provider == mock_provider
-    assert result.securitySchemes == mock_security_schemes
+    assert result.security_schemes == mock_security_schemes
 
   @patch("google.adk.a2a.utils.agent_card_builder._build_primary_skills")
   @patch("google.adk.a2a.utils.agent_card_builder._build_sub_agent_skills")
