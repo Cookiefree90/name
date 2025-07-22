@@ -32,6 +32,7 @@ from typing import Union
 
 from google.genai import types
 from opentelemetry import trace
+from pydantic import alias_generators
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -43,6 +44,7 @@ from typing_extensions import TypeAlias
 from ..events.event import Event
 from ..utils.feature_decorator import working_in_progress
 from .callback_context import CallbackContext
+from .common_configs import CodeConfig
 
 if TYPE_CHECKING:
   from .invocation_context import InvocationContext
@@ -510,6 +512,7 @@ class BaseAgent(BaseModel):
       The created agent.
     """
     from .config_agent_utils import build_sub_agent
+    from .config_agent_utils import resolve_callbacks
 
     kwargs: Dict[str, Any] = {
         'name': config.name,
@@ -523,6 +526,15 @@ class BaseAgent(BaseModel):
         )
         sub_agents.append(sub_agent)
       kwargs['sub_agents'] = sub_agents
+
+    if config.before_agent_callbacks:
+      kwargs['before_agent_callback'] = resolve_callbacks(
+          config.before_agent_callbacks
+      )
+    if config.after_agent_callbacks:
+      kwargs['after_agent_callback'] = resolve_callbacks(
+          config.after_agent_callbacks
+      )
     return cls(**kwargs)
 
 
@@ -593,7 +605,11 @@ class BaseAgentConfig(BaseModel):
   Do not use this class directly. It's the base class for all agent configs.
   """
 
-  model_config = ConfigDict(extra='forbid')
+  model_config = ConfigDict(
+      extra='forbid',
+      alias_generator=alias_generators.to_camel,
+      populate_by_name=True,
+  )
 
   agent_class: Literal['BaseAgent'] = 'BaseAgent'
   """Required. The class of the agent. The value is used to differentiate
@@ -607,3 +623,17 @@ class BaseAgentConfig(BaseModel):
 
   sub_agents: Optional[List[SubAgentConfig]] = None
   """Optional. The sub-agents of the agent."""
+
+  before_agent_callbacks: Optional[List[CodeConfig]] = None
+  """Optional. The before_agent_callbacks of the agent.
+
+  Example:
+
+    ```
+    before_agent_callbacks:
+      - name: my_library.security_callbacks.before_agent_callback
+    ```
+  """
+
+  after_agent_callbacks: Optional[List[CodeConfig]] = None
+  """Optional. The after_agent_callbacks of the agent."""

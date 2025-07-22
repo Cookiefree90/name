@@ -20,6 +20,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import time
 import traceback
 import typing
@@ -32,6 +33,7 @@ import click
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Query
+from fastapi import UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
@@ -41,7 +43,6 @@ from fastapi.websockets import WebSocketDisconnect
 from google.genai import types
 import graphviz
 from opentelemetry import trace
-from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
 from opentelemetry.sdk.trace import export
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace import TracerProvider
@@ -60,6 +61,9 @@ from ..artifacts.gcs_artifact_service import GcsArtifactService
 from ..artifacts.in_memory_artifact_service import InMemoryArtifactService
 from ..auth.credential_service.in_memory_credential_service import InMemoryCredentialService
 from ..errors.not_found_error import NotFoundError
+from ..evaluation.base_eval_service import InferenceConfig
+from ..evaluation.base_eval_service import InferenceRequest
+from ..evaluation.constants import MISSING_EVAL_DEPENDENCIES_MESSAGE
 from ..evaluation.eval_case import EvalCase
 from ..evaluation.eval_case import SessionInput
 from ..evaluation.eval_metrics import EvalMetric
@@ -71,12 +75,11 @@ from ..evaluation.local_eval_sets_manager import LocalEvalSetsManager
 from ..events.event import Event
 from ..memory.in_memory_memory_service import InMemoryMemoryService
 from ..memory.vertex_ai_memory_bank_service import VertexAiMemoryBankService
-from ..memory.vertex_ai_rag_memory_service import VertexAiRagMemoryService
 from ..runners import Runner
-from ..sessions.database_session_service import DatabaseSessionService
 from ..sessions.in_memory_session_service import InMemorySessionService
 from ..sessions.session import Session
 from ..sessions.vertex_ai_session_service import VertexAiSessionService
+from ..utils.feature_decorator import working_in_progress
 from .cli_eval import EVAL_SESSION_ID_PREFIX
 from .cli_eval import EvalStatus
 from .utils import cleanup
@@ -175,6 +178,7 @@ class AgentRunRequest(common.BaseModel):
   session_id: str
   new_message: types.Content
   streaming: bool = False
+  state_delta: Optional[dict[str, Any]] = None
 
 
 class AddSessionToEvalSetRequest(common.BaseModel):
@@ -195,6 +199,7 @@ class RunEvalResult(common.BaseModel):
   final_eval_status: EvalStatus
   eval_metric_results: list[tuple[EvalMetric, EvalMetricResult]] = Field(
       deprecated=True,
+      default=[],
       description=(
           "This field is deprecated, use overall_eval_metric_results instead."
       ),
@@ -237,6 +242,8 @@ def get_fast_api_app(
   memory_exporter = InMemoryExporter(session_trace_dict)
   provider.add_span_processor(export.SimpleSpanProcessor(memory_exporter))
   if trace_to_cloud:
+    from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+
     envs.load_dotenv_for_agent("", agents_dir)
     if project_id := os.environ.get("GOOGLE_CLOUD_PROJECT", None):
       processor = export.BatchSpanProcessor(
@@ -293,9 +300,36 @@ def get_fast_api_app(
     eval_sets_manager = LocalEvalSetsManager(agents_dir=agents_dir)
     eval_set_results_manager = LocalEvalSetResultsManager(agents_dir=agents_dir)
 
+  def _parse_agent_engine_resource_name(agent_engine_id_or_resource_name):
+    if not agent_engine_id_or_resource_name:
+      raise click.ClickException(
+          "Agent engine resource name or resource id can not be empty."
+      )
+
+    # "projects/my-project/locations/us-central1/reasoningEngines/1234567890",
+    if "/" in agent_engine_id_or_resource_name:
+      # Validate resource name.
+      if len(agent_engine_id_or_resource_name.split("/")) != 6:
+        raise click.ClickException(
+            "Agent engine resource name is mal-formatted. It should be of"
+            " format :"
+            " projects/{project_id}/locations/{location}/reasoningEngines/{resource_id}"
+        )
+      project = agent_engine_id_or_resource_name.split("/")[1]
+      location = agent_engine_id_or_resource_name.split("/")[3]
+      agent_engine_id = agent_engine_id_or_resource_name.split("/")[-1]
+    else:
+      envs.load_dotenv_for_agent("", agents_dir)
+      project = os.environ["GOOGLE_CLOUD_PROJECT"]
+      location = os.environ["GOOGLE_CLOUD_LOCATION"]
+      agent_engine_id = agent_engine_id_or_resource_name
+    return project, location, agent_engine_id
+
   # Build the Memory service
   if memory_service_uri:
     if memory_service_uri.startswith("rag://"):
+      from ..memory.vertex_ai_rag_memory_service import VertexAiRagMemoryService
+
       rag_corpus = memory_service_uri.split("://")[1]
       if not rag_corpus:
         raise click.ClickException("Rag corpus can not be empty.")
@@ -304,13 +338,13 @@ def get_fast_api_app(
           rag_corpus=f'projects/{os.environ["GOOGLE_CLOUD_PROJECT"]}/locations/{os.environ["GOOGLE_CLOUD_LOCATION"]}/ragCorpora/{rag_corpus}'
       )
     elif memory_service_uri.startswith("agentengine://"):
-      agent_engine_id = memory_service_uri.split("://")[1]
-      if not agent_engine_id:
-        raise click.ClickException("Agent engine id can not be empty.")
-      envs.load_dotenv_for_agent("", agents_dir)
+      agent_engine_id_or_resource_name = memory_service_uri.split("://")[1]
+      project, location, agent_engine_id = _parse_agent_engine_resource_name(
+          agent_engine_id_or_resource_name
+      )
       memory_service = VertexAiMemoryBankService(
-          project=os.environ["GOOGLE_CLOUD_PROJECT"],
-          location=os.environ["GOOGLE_CLOUD_LOCATION"],
+          project=project,
+          location=location,
           agent_engine_id=agent_engine_id,
       )
     else:
@@ -323,17 +357,18 @@ def get_fast_api_app(
   # Build the Session service
   if session_service_uri:
     if session_service_uri.startswith("agentengine://"):
-      # Create vertex session service
-      agent_engine_id = session_service_uri.split("://")[1]
-      if not agent_engine_id:
-        raise click.ClickException("Agent engine id can not be empty.")
-      envs.load_dotenv_for_agent("", agents_dir)
+      agent_engine_id_or_resource_name = session_service_uri.split("://")[1]
+      project, location, agent_engine_id = _parse_agent_engine_resource_name(
+          agent_engine_id_or_resource_name
+      )
       session_service = VertexAiSessionService(
-          project=os.environ["GOOGLE_CLOUD_PROJECT"],
-          location=os.environ["GOOGLE_CLOUD_LOCATION"],
+          project=project,
+          location=location,
           agent_engine_id=agent_engine_id,
       )
     else:
+      from ..sessions.database_session_service import DatabaseSessionService
+
       session_service = DatabaseSessionService(db_url=session_service_uri)
   else:
     session_service = InMemorySessionService()
@@ -513,7 +548,11 @@ def get_fast_api_app(
   )
   def list_eval_sets(app_name: str) -> list[str]:
     """Lists all eval sets for the given app."""
-    return eval_sets_manager.list_eval_sets(app_name)
+    try:
+      return eval_sets_manager.list_eval_sets(app_name)
+    except NotFoundError as e:
+      logger.warning(e)
+      return []
 
   @app.post(
       "/apps/{app_name}/eval_sets/{eval_set_id}/add_session",
@@ -629,7 +668,9 @@ def get_fast_api_app(
       app_name: str, eval_set_id: str, req: RunEvalRequest
   ) -> list[RunEvalResult]:
     """Runs an eval given the details in the eval request."""
-    from .cli_eval import run_evals
+    from ..evaluation.local_eval_service import LocalEvalService
+    from .cli_eval import _collect_eval_results
+    from .cli_eval import _collect_inferences
 
     # Create a mapping from eval set file to all the evals that needed to be
     # run.
@@ -640,52 +681,52 @@ def get_fast_api_app(
           status_code=400, detail=f"Eval set `{eval_set_id}` not found."
       )
 
-    if req.eval_ids:
-      eval_cases = [e for e in eval_set.eval_cases if e.eval_id in req.eval_ids]
-      eval_set_to_evals = {eval_set_id: eval_cases}
-    else:
-      logger.info("Eval ids to run list is empty. We will run all eval cases.")
-      eval_set_to_evals = {eval_set_id: eval_set.eval_cases}
-
     root_agent = agent_loader.load_agent(app_name)
-    run_eval_results = []
+
     eval_case_results = []
     try:
-      async for eval_case_result in run_evals(
-          eval_set_to_evals,
-          root_agent,
-          getattr(root_agent, "reset_data", None),
-          req.eval_metrics,
+      eval_service = LocalEvalService(
+          root_agent=root_agent,
+          eval_sets_manager=eval_sets_manager,
+          eval_set_results_manager=eval_set_results_manager,
           session_service=session_service,
           artifact_service=artifact_service,
-      ):
-        run_eval_results.append(
-            RunEvalResult(
-                app_name=app_name,
-                eval_set_file=eval_case_result.eval_set_file,
-                eval_set_id=eval_set_id,
-                eval_id=eval_case_result.eval_id,
-                final_eval_status=eval_case_result.final_eval_status,
-                eval_metric_results=eval_case_result.eval_metric_results,
-                overall_eval_metric_results=eval_case_result.overall_eval_metric_results,
-                eval_metric_result_per_invocation=eval_case_result.eval_metric_result_per_invocation,
-                user_id=eval_case_result.user_id,
-                session_id=eval_case_result.session_id,
-            )
-        )
-        eval_case_result.session_details = await session_service.get_session(
-            app_name=app_name,
-            user_id=eval_case_result.user_id,
-            session_id=eval_case_result.session_id,
-        )
-        eval_case_results.append(eval_case_result)
+      )
+      inference_request = InferenceRequest(
+          app_name=app_name,
+          eval_set_id=eval_set.eval_set_id,
+          eval_case_ids=req.eval_ids,
+          inference_config=InferenceConfig(),
+      )
+      inference_results = await _collect_inferences(
+          inference_requests=[inference_request], eval_service=eval_service
+      )
+
+      eval_case_results = await _collect_eval_results(
+          inference_results=inference_results,
+          eval_service=eval_service,
+          eval_metrics=req.eval_metrics,
+      )
     except ModuleNotFoundError as e:
       logger.exception("%s", e)
-      raise HTTPException(status_code=400, detail=str(e)) from e
+      raise HTTPException(
+          status_code=400, detail=MISSING_EVAL_DEPENDENCIES_MESSAGE
+      ) from e
 
-    eval_set_results_manager.save_eval_set_result(
-        app_name, eval_set_id, eval_case_results
-    )
+    run_eval_results = []
+    for eval_case_result in eval_case_results:
+      run_eval_results.append(
+          RunEvalResult(
+              eval_set_file=eval_case_result.eval_set_file,
+              eval_set_id=eval_set_id,
+              eval_id=eval_case_result.eval_id,
+              final_eval_status=eval_case_result.final_eval_status,
+              overall_eval_metric_results=eval_case_result.overall_eval_metric_results,
+              eval_metric_result_per_invocation=eval_case_result.eval_metric_result_per_invocation,
+              user_id=eval_case_result.user_id,
+              session_id=eval_case_result.session_id,
+          )
+      )
 
     return run_eval_results
 
@@ -803,6 +844,33 @@ def get_fast_api_app(
         filename=artifact_name,
     )
 
+  @working_in_progress("builder_save is not ready for use.")
+  @app.post("/builder/save", response_model_exclude_none=True)
+  async def builder_build(files: list[UploadFile]) -> bool:
+    base_path = Path.cwd() / agents_dir
+
+    for file in files:
+      try:
+        # File name format: {app_name}/{agent_name}.yaml
+        if not file.filename:
+          logger.exception("Agent name is missing in the input files")
+          return False
+
+        agent_name, filename = file.filename.split("/")
+
+        agent_dir = os.path.join(base_path, agent_name)
+        os.makedirs(agent_dir, exist_ok=True)
+        file_path = os.path.join(agent_dir, filename)
+
+        with open(file_path, "wb") as buffer:
+          shutil.copyfileobj(file.file, buffer)
+
+      except Exception as e:
+        logger.exception("Error in builder_build: %s", e)
+        return False
+
+    return True
+
   @app.post("/run", response_model_exclude_none=True)
   async def agent_run(req: AgentRunRequest) -> list[Event]:
     session = await session_service.get_session(
@@ -840,6 +908,7 @@ def get_fast_api_app(
             user_id=req.user_id,
             session_id=req.session_id,
             new_message=req.new_message,
+            state_delta=req.state_delta,
             run_config=RunConfig(streaming_mode=stream_mode),
         ):
           # Format as SSE data
@@ -1003,6 +1072,7 @@ def get_fast_api_app(
       from a2a.server.request_handlers import DefaultRequestHandler
       from a2a.server.tasks import InMemoryTaskStore
       from a2a.types import AgentCard
+      from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 
       from ..a2a.executor.a2a_agent_executor import A2aAgentExecutor
 
@@ -1066,7 +1136,7 @@ def get_fast_api_app(
 
           routes = a2a_app.routes(
               rpc_url=f"/a2a/{app_name}",
-              agent_card_url=f"/a2a/{app_name}/.well-known/agent.json",
+              agent_card_url=f"/a2a/{app_name}{AGENT_CARD_WELL_KNOWN_PATH}",
           )
 
           for new_route in routes:
@@ -1096,7 +1166,9 @@ def get_fast_api_app(
 
     app.mount(
         "/dev-ui/",
-        StaticFiles(directory=ANGULAR_DIST_PATH, html=True),
+        StaticFiles(
+            directory=ANGULAR_DIST_PATH, html=True, follow_symlink=True
+        ),
         name="static",
     )
   return app
