@@ -59,7 +59,6 @@ class AgentCardBuilder:
       agent: BaseAgent,
       rpc_url: Optional[str] = None,
       capabilities: Optional[AgentCapabilities] = None,
-      doc_url: Optional[str] = None,
       provider: Optional[AgentProvider] = None,
       agent_version: Optional[str] = None,
       security_schemes: Optional[Dict[str, SecurityScheme]] = None,
@@ -70,7 +69,6 @@ class AgentCardBuilder:
     self._agent = agent
     self._rpc_url = rpc_url or 'http://localhost:80/a2a'
     self._capabilities = capabilities or AgentCapabilities()
-    self._doc_url = doc_url
     self._provider = provider
     self._security_schemes = security_schemes
     self._agent_version = agent_version or '0.0.1'
@@ -85,16 +83,15 @@ class AgentCardBuilder:
       return AgentCard(
           name=self._agent.name,
           description=self._agent.description or 'An ADK Agent',
-          doc_url=self._doc_url,
           url=f"{self._rpc_url.rstrip('/')}",
           version=self._agent_version,
           capabilities=self._capabilities,
           skills=all_skills,
-          defaultInputModes=['text/plain'],
-          defaultOutputModes=['text/plain'],
-          supportsAuthenticatedExtendedCard=False,
+          default_input_modes=['text/plain'],
+          default_output_modes=['text/plain'],
+          supports_authenticated_extended_card=False,
           provider=self._provider,
-          securitySchemes=self._security_schemes,
+          security_schemes=self._security_schemes,
       )
     except Exception as e:
       raise RuntimeError(
@@ -125,8 +122,8 @@ async def _build_llm_agent_skills(agent: LlmAgent) -> List[AgentSkill]:
           name='model',
           description=agent_description,
           examples=agent_examples,
-          inputModes=_get_input_modes(agent),
-          outputModes=_get_output_modes(agent),
+          input_modes=_get_input_modes(agent),
+          output_modes=_get_output_modes(agent),
           tags=['llm'],
       )
   )
@@ -160,8 +157,8 @@ async def _build_sub_agent_skills(agent: BaseAgent) -> List[AgentSkill]:
             name=f'{sub_agent.name}: {skill.name}',
             description=skill.description,
             examples=skill.examples,
-            inputModes=skill.inputModes,
-            outputModes=skill.outputModes,
+            input_modes=skill.input_modes,
+            output_modes=skill.output_modes,
             tags=[f'sub_agent:{sub_agent.name}'] + (skill.tags or []),
         )
         sub_agent_skills.append(aggregated_skill)
@@ -197,8 +194,8 @@ async def _build_tool_skills(agent: LlmAgent) -> List[AgentSkill]:
             name=tool_name,
             description=getattr(tool, 'description', f'Tool: {tool_name}'),
             examples=None,
-            inputModes=None,
-            outputModes=None,
+            input_modes=None,
+            output_modes=None,
             tags=['llm', 'tools'],
         )
     )
@@ -213,8 +210,8 @@ def _build_planner_skill(agent: LlmAgent) -> AgentSkill:
       name='planning',
       description='Can think about the tasks to do and make plans',
       examples=None,
-      inputModes=None,
-      outputModes=None,
+      input_modes=None,
+      output_modes=None,
       tags=['llm', 'planning'],
   )
 
@@ -226,8 +223,8 @@ def _build_code_executor_skill(agent: LlmAgent) -> AgentSkill:
       name='code-execution',
       description='Can execute codes',
       examples=None,
-      inputModes=None,
-      outputModes=None,
+      input_modes=None,
+      output_modes=None,
       tags=['llm', 'code_execution'],
   )
 
@@ -250,8 +247,8 @@ async def _build_non_llm_agent_skills(agent: BaseAgent) -> List[AgentSkill]:
           name=agent_name,
           description=agent_description,
           examples=agent_examples,
-          inputModes=_get_input_modes(agent),
-          outputModes=_get_output_modes(agent),
+          input_modes=_get_input_modes(agent),
+          output_modes=_get_output_modes(agent),
           tags=[agent_type],
       )
   )
@@ -282,8 +279,8 @@ def _build_orchestration_skill(
       name='sub-agents',
       description='Orchestrates: ' + '; '.join(sub_agent_descriptions),
       examples=None,
-      inputModes=None,
-      outputModes=None,
+      input_modes=None,
+      output_modes=None,
       tags=[agent_type, 'orchestration'],
   )
 
