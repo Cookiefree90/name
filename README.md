@@ -23,7 +23,6 @@
 
 Agent Development Kit (ADK) is a flexible and modular framework for developing and deploying AI agents. While optimized for Gemini and the Google ecosystem, ADK is model-agnostic, deployment-agnostic, and is built for compatibility with other frameworks. ADK was designed to make agent development feel more like software development, to make it easier for developers to create, deploy, and orchestrate agentic architectures that range from simple tasks to complex workflows.
 
-
 ---
 
 ## ✨ Key Features
@@ -63,6 +62,7 @@ The release cadence is weekly.
 This version is recommended for most users as it represents the most recent official release.
 
 ### Development Version
+
 Bug fixes and new features are merged into the main branch on GitHub first. If you need access to changes that haven't been included in an official PyPI release yet, you can install directly from the main branch:
 
 ```bash
@@ -76,7 +76,7 @@ Note: The development version is built directly from the latest code commits. Wh
 Explore the full documentation for detailed guides on building, evaluating, and
 deploying agents:
 
-* **[Documentation](https://google.github.io/adk-docs)**
+- **[Documentation](https://google.github.io/adk-docs)**
 
 ## 🏁 Feature Highlight
 
@@ -99,22 +99,57 @@ root_agent = Agent(
 
 Define a multi-agent system with coordinator agent, greeter agent, and task execution agent. Then ADK engine and the model will guide the agents works together to accomplish the task.
 
-```python
 from google.adk.agents import LlmAgent, BaseAgent
 
 # Define individual agents
+
 greeter = LlmAgent(name="greeter", model="gemini-2.0-flash", ...)
 task_executor = LlmAgent(name="task_executor", model="gemini-2.0-flash", ...)
 
 # Create parent agent and assign children via sub_agents
+
 coordinator = LlmAgent(
-    name="Coordinator",
-    model="gemini-2.0-flash",
-    description="I coordinate greetings and tasks.",
-    sub_agents=[ # Assign sub_agents here
-        greeter,
-        task_executor
-    ]
+name="Coordinator",
+model="gemini-2.0-flash",
+description="I coordinate greetings and tasks.",
+sub_agents=[ # Assign sub_agents here
+greeter,
+task_executor
+]
+)
+
+### Large Context Management:
+
+Efficiently handle massive context windows (1M-2M tokens) using reference-based state management.
+
+```python
+from google.adk.sessions import LargeContextState, ContextReferenceStore
+from google.adk.agents import LlmAgent
+from google.adk.tools import FunctionTool
+
+# Create a context store and large context state
+context_store = ContextReferenceStore()
+state = LargeContextState(context_store=context_store)
+
+# Store large context by reference instead of direct serialization
+document_ref = state.add_large_context(
+    large_document,
+    metadata={"content_type": "application/json", "cache_ttl": 3600},
+    key="document_ref"
+)
+
+# Create tools that use the context reference
+def search_document(context_state: LargeContextState, query: str):
+    # Efficiently retrieve the document from the store
+    document = context_state.get_context("document_ref")
+    # Process and return results...
+
+# Create an agent that can work with the large context efficiently
+agent = LlmAgent(
+    name="document_explorer",
+    model="gemini-1.5-pro", # Optimized for large context windows
+    tools=[FunctionTool(func=search_document, name="search_document", description="...")],
+    instruction="You have access to a large document through reference-based context management..."
 )
 ```
 
@@ -124,7 +159,7 @@ A built-in development UI to help you test, evaluate, debug, and showcase your a
 
 <img src="https://raw.githubusercontent.com/google/adk-python/main/assets/adk-web-dev-ui-function-call.png"/>
 
-###  Evaluate Agents
+### Evaluate Agents
 
 ```bash
 adk eval \
@@ -135,6 +170,7 @@ adk eval \
 ## 🤝 Contributing
 
 We welcome contributions from the community! Whether it's bug reports, feature requests, documentation improvements, or code contributions, please see our
+
 - [General contribution guideline and flow](https://google.github.io/adk-docs/contributing-guide/).
 - Then if you want to contribute code, please read [Code Contributing Guidelines](./CONTRIBUTING.md) to get started.
 
@@ -144,4 +180,4 @@ This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENS
 
 ---
 
-*Happy Agent Building!*
+_Happy Agent Building!_
