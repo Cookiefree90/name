@@ -17,9 +17,11 @@ from __future__ import annotations
 from abc import ABC
 import asyncio
 import datetime
+from enum import Enum
 import inspect
 import logging
 from typing import AsyncGenerator
+from typing import Callable
 from typing import cast
 from typing import Optional
 from typing import TYPE_CHECKING
@@ -36,6 +38,7 @@ from ...agents.readonly_context import ReadonlyContext
 from ...agents.run_config import StreamingMode
 from ...agents.transcription_entry import TranscriptionEntry
 from ...events.event import Event
+from ...models.base_llm import ModelErrorStrategy
 from ...models.base_llm_connection import BaseLlmConnection
 from ...models.llm_request import LlmRequest
 from ...models.llm_response import LlmResponse
@@ -534,7 +537,13 @@ class BaseLlmFlow(ABC):
     with tracer.start_as_current_span('call_llm'):
       if invocation_context.run_config.support_cfc:
         invocation_context.live_request_queue = LiveRequestQueue()
-        async for llm_response in self.run_live(invocation_context):
+        responses_generator = lambda: self.run_live(invocation_context)
+        async for llm_response in self._run_and_handle_error(
+            responses_generator,
+            invocation_context,
+            llm_request,
+            model_response_event,
+        ):
           # Runs after_model_callback if it exists.
           if altered_llm_response := await self._handle_after_model_callback(
               invocation_context, llm_response, model_response_event
@@ -553,10 +562,16 @@ class BaseLlmFlow(ABC):
         # the counter beyond the max set value, then the execution is stopped
         # right here, and exception is thrown.
         invocation_context.increment_llm_call_count()
-        async for llm_response in llm.generate_content_async(
+        responses_generator = lambda: llm.generate_content_async(
             llm_request,
             stream=invocation_context.run_config.streaming_mode
             == StreamingMode.SSE,
+        )
+        async for llm_response in self._run_and_handle_error(
+            responses_generator,
+            invocation_context,
+            llm_request,
+            model_response_event,
         ):
           trace_call_llm(
               invocation_context,
@@ -672,6 +687,54 @@ class BaseLlmFlow(ABC):
         )
 
     return model_response_event
+
+  async def _run_and_handle_error(
+      self,
+      response_generator: Callable[..., AsyncGenerator[LlmResponse, None]],
+      invocation_context: InvocationContext,
+      llm_request: LlmRequest,
+      model_response_event: Event,
+  ) -> AsyncGenerator[LlmResponse, None]:
+    """Runs the response generator and processes the error with plugins.
+
+    Args:
+      response_generator: The response generator to run.
+      invocation_context: The invocation context.
+      llm_request: The LLM request.
+      model_response_event: The model response event.
+
+    Yields:
+      A generator of LlmResponse.
+    """
+    while True:
+      try:
+        responses_generator_instance = response_generator()
+        async for response in responses_generator_instance:
+          yield response
+        break
+      except Exception as model_error:
+        callback_context = CallbackContext(
+            invocation_context, event_actions=model_response_event.actions
+        )
+        outcome = (
+            await invocation_context.plugin_manager.run_on_model_error_callback(
+                callback_context=callback_context,
+                llm_request=llm_request,
+                error=model_error,
+            )
+        )
+        # Retry the LLM call if the plugin outcome is RETRY.
+        if outcome == ModelErrorStrategy.RETRY:
+          continue
+
+        # If the plugin outcome is PASS, we can break the loop.
+        if outcome == ModelErrorStrategy.PASS:
+          break
+        if outcome is not None:
+          yield outcome
+          break
+        else:
+          raise model_error
 
   def __get_llm(self, invocation_context: InvocationContext) -> BaseLlm:
     from ...agents.llm_agent import LlmAgent

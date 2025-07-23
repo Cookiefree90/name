@@ -247,6 +247,7 @@ class MockModel(BaseLlm):
 
   requests: list[LlmRequest] = []
   responses: list[LlmResponse]
+  error: Union[Exception, None] = None
   response_index: int = -1
 
   @classmethod
@@ -255,7 +256,10 @@ class MockModel(BaseLlm):
       responses: Union[
           list[types.Part], list[LlmResponse], list[str], list[list[types.Part]]
       ],
+      error: Union[Exception, None] = None,
   ):
+    if error and not responses:
+      return cls(responses=[], error=error)
     if not responses:
       return cls(responses=[])
     elif isinstance(responses[0], LlmResponse):
@@ -287,6 +291,8 @@ class MockModel(BaseLlm):
   ) -> Generator[LlmResponse, None, None]:
     # Increasement of the index has to happen before the yield.
     self.response_index += 1
+    if self.error:
+      raise self.error
     self.requests.append(llm_request)
     # yield LlmResponse(content=self.responses[self.response_index])
     yield self.responses[self.response_index]
@@ -297,6 +303,8 @@ class MockModel(BaseLlm):
   ) -> AsyncGenerator[LlmResponse, None]:
     # Increasement of the index has to happen before the yield.
     self.response_index += 1
+    if self.error:
+      raise self.error
     self.requests.append(llm_request)
     yield self.responses[self.response_index]
 

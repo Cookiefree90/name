@@ -28,6 +28,11 @@ if TYPE_CHECKING:
   from .llm_response import LlmResponse
 
 
+class ModelErrorStrategy:
+  RETRY = 'RETRY'
+  PASS = 'PASS'
+
+
 class BaseLlm(BaseModel):
   """The BaseLLM class.
 
