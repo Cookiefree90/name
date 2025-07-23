@@ -1149,8 +1149,109 @@ def get_fast_api_app(
       return RedirectResponse("/dev-ui/")
 
     @app.get("/dev-ui")
-    async def redirect_dev_ui_add_slash():
+    async def redirect_dev_ui_add_slash(
+        code: Optional[str] = Query(None),
+        state: Optional[str] = Query(None),
+    ):
+      # Handle OAuth callback if code and state are present
+      if code and state:
+        await _handle_oauth_callback(code, state)
+      
       return RedirectResponse("/dev-ui/")
+
+    async def _handle_oauth_callback(code: str, state: str) -> None:
+      """Handle OAuth callback by finding and updating the matching auth request."""
+      try:
+        logger.info(f"Processing OAuth callback with code and state: {state}")
+        
+        # Find the session with the matching auth request
+        target_session = None
+        target_function_call = None
+        
+        all_sessions = []
+        if isinstance(session_service, InMemorySessionService):
+          for app_sessions in session_service._sessions.values():
+            for user_sessions in app_sessions.values():
+              for session in user_sessions.values():
+                all_sessions.append(session)
+        
+        # Search for the auth request with matching state
+        for session in all_sessions:
+          if not session.events:
+            continue
+            
+          # Look for adk_request_credential function calls with matching state
+          for event in reversed(session.events):
+            if (event.author != 'user' and 
+                event.content and 
+                event.content.parts):
+              for part in event.content.parts:
+                if (part.function_call and 
+                    part.function_call.name == 'adk_request_credential'):
+                  try:
+                    auth_args = part.function_call.args
+                    if isinstance(auth_args, str):
+                      auth_args = json.loads(auth_args)
+                    
+                    auth_config = auth_args.get('auth_config', {})
+                    exchanged_cred = auth_config.get('exchanged_auth_credential', {})
+                    
+                    if exchanged_cred.get('oauth2', {}).get('state') == state:
+                      target_session = session
+                      target_function_call = part.function_call
+                      break
+                  except Exception as e:
+                    logger.warning(f"Error parsing auth request: {e}")
+                    continue
+            
+            if target_function_call:
+              break
+          
+          if target_function_call:
+            break
+        
+        if not target_session or not target_function_call:
+          logger.warning(f"No matching auth request found for OAuth state: {state}")
+          return
+        
+        # Update the auth config with the authorization code
+        auth_args = target_function_call.args
+        if isinstance(auth_args, str):
+          auth_args = json.loads(auth_args)
+        
+        auth_config = auth_args.get('auth_config', {})
+        
+        # Update the exchanged credential with the authorization code
+        if 'exchanged_auth_credential' in auth_config:
+          exchanged_cred = auth_config['exchanged_auth_credential']
+          if 'oauth2' in exchanged_cred:
+            exchanged_cred['oauth2']['auth_code'] = code
+            exchanged_cred['oauth2']['auth_response_uri'] = f"http://{host}:{port}/dev-ui?code={code}&state={state}"
+        
+        # Create function response to continue the authentication flow
+        function_response = types.FunctionResponse(
+          name='adk_request_credential',
+          response=auth_config
+        )
+        function_response.id = target_function_call.id
+        
+        # Send the response to continue the flow
+        runner = await _get_runner_async(target_session.app_name)
+        await runner.run_async(
+          user_id=target_session.user_id,
+          session_id=target_session.id,
+          new_message=types.Content(
+            role='user',
+            parts=[types.Part(function_response=function_response)]
+          )
+        )
+        
+        logger.info(f"Successfully processed OAuth callback for session {target_session.id}")
+        
+      except Exception as e:
+        logger.error(f"Error processing OAuth callback: {e}")
+        import traceback
+        traceback.print_exc()
 
     app.mount(
         "/dev-ui/",
