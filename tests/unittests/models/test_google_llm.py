@@ -16,6 +16,7 @@ import os
 import sys
 from typing import Optional
 from unittest import mock
+from unittest.mock import AsyncMock
 
 from google.adk import version as adk_version
 from google.adk.models.gemini_llm_connection import GeminiLlmConnection
@@ -28,7 +29,6 @@ from google.adk.utils.variant_utils import GoogleLLMVariant
 from google.genai import types
 from google.genai import version as genai_version
 from google.genai.types import Content
-from google.genai.types import FinishReason
 from google.genai.types import Part
 import pytest
 
@@ -67,6 +67,26 @@ def llm_request():
 
 
 @pytest.fixture
+def llm_request_with_computer_use():
+  return LlmRequest(
+      model="gemini-1.5-flash",
+      contents=[Content(role="user", parts=[Part.from_text(text="Hello")])],
+      config=types.GenerateContentConfig(
+          temperature=0.1,
+          response_modalities=[types.Modality.TEXT],
+          system_instruction="You are a helpful assistant",
+          tools=[
+              types.Tool(
+                  computer_use=types.ToolComputerUse(
+                      environment=types.Environment.ENVIRONMENT_BROWSER
+                  )
+              )
+          ],
+      ),
+  )
+
+
+@pytest.fixture
 def mock_os_environ():
   initial_env = os.environ.copy()
   with mock.patch.dict(os.environ, initial_env, clear=False) as m:
@@ -88,20 +108,32 @@ def test_supported_models():
 def test_client_version_header():
   model = Gemini(model="gemini-1.5-flash")
   client = model.api_client
-  adk_header = (
-      f"google-adk/{adk_version.__version__} gl-python/{sys.version.split()[0]}"
-  )
-  genai_header = (
-      f"google-genai-sdk/{genai_version.__version__} gl-python/{sys.version.split()[0]} "
-  )
-  expected_header = genai_header + adk_header
 
-  assert (
-      expected_header
-      in client._api_client._http_options.headers["x-goog-api-client"]
+  # Check that ADK version and Python version are present in headers
+  adk_version_string = f"google-adk/{adk_version.__version__}"
+  python_version_string = f"gl-python/{sys.version.split()[0]}"
+
+  x_goog_api_client_header = client._api_client._http_options.headers[
+      "x-goog-api-client"
+  ]
+  user_agent_header = client._api_client._http_options.headers["user-agent"]
+
+  # Verify ADK version is present
+  assert adk_version_string in x_goog_api_client_header
+  assert adk_version_string in user_agent_header
+
+  # Verify Python version is present
+  assert python_version_string in x_goog_api_client_header
+  assert python_version_string in user_agent_header
+
+  # Verify some Google SDK version is present (could be genai-sdk or vertex-genai-modules)
+  assert any(
+      sdk in x_goog_api_client_header
+      for sdk in ["google-genai-sdk/", "vertex-genai-modules/"]
   )
-  assert (
-      expected_header in client._api_client._http_options.headers["user-agent"]
+  assert any(
+      sdk in user_agent_header
+      for sdk in ["google-genai-sdk/", "vertex-genai-modules/"]
   )
 
 
@@ -109,23 +141,34 @@ def test_client_version_header_with_agent_engine(mock_os_environ):
   os.environ[_AGENT_ENGINE_TELEMETRY_ENV_VARIABLE_NAME] = "my_test_project"
   model = Gemini(model="gemini-1.5-flash")
   client = model.api_client
-  adk_header_base = f"google-adk/{adk_version.__version__}"
-  adk_header_with_telemetry = (
-      f"{adk_header_base}+{_AGENT_ENGINE_TELEMETRY_TAG}"
-      f" gl-python/{sys.version.split()[0]}"
-  )
-  genai_header = (
-      f"google-genai-sdk/{genai_version.__version__} "
-      f"gl-python/{sys.version.split()[0]} "
-  )
-  expected_header = genai_header + adk_header_with_telemetry
 
-  assert (
-      expected_header
-      in client._api_client._http_options.headers["x-goog-api-client"]
+  # Check that ADK version with telemetry tag and Python version are present in headers
+  adk_version_with_telemetry = (
+      f"google-adk/{adk_version.__version__}+{_AGENT_ENGINE_TELEMETRY_TAG}"
   )
-  assert (
-      expected_header in client._api_client._http_options.headers["user-agent"]
+  python_version_string = f"gl-python/{sys.version.split()[0]}"
+
+  x_goog_api_client_header = client._api_client._http_options.headers[
+      "x-goog-api-client"
+  ]
+  user_agent_header = client._api_client._http_options.headers["user-agent"]
+
+  # Verify ADK version with telemetry tag is present
+  assert adk_version_with_telemetry in x_goog_api_client_header
+  assert adk_version_with_telemetry in user_agent_header
+
+  # Verify Python version is present
+  assert python_version_string in x_goog_api_client_header
+  assert python_version_string in user_agent_header
+
+  # Verify some Google SDK version is present (could be genai-sdk or vertex-genai-modules)
+  assert any(
+      sdk in x_goog_api_client_header
+      for sdk in ["google-genai-sdk/", "vertex-genai-modules/"]
+  )
+  assert any(
+      sdk in user_agent_header
+      for sdk in ["google-genai-sdk/", "vertex-genai-modules/"]
   )
 
 
@@ -614,7 +657,8 @@ async def test_connect_without_custom_headers(gemini_llm, llm_request):
         ),
     ],
 )
-def test_preprocess_request_handles_backend_specific_fields(
+@pytest.mark.asyncio
+async def test_preprocess_request_handles_backend_specific_fields(
     gemini_llm: Gemini,
     api_backend: GoogleLLMVariant,
     expected_file_display_name: Optional[str],
@@ -662,7 +706,7 @@ def test_preprocess_request_handles_backend_specific_fields(
     mock_backend.return_value = api_backend
 
     # Act: Run the preprocessing method
-    gemini_llm._preprocess_request(llm_request_with_files)
+    await gemini_llm._preprocess_request(llm_request_with_files)
 
     # Assert: Check if the fields were correctly processed
     file_part = llm_request_with_files.contents[0].parts[0]
@@ -1535,3 +1579,165 @@ async def test_generate_content_async_stream_two_separate_text_aggregations():
         function_call_responses[0].content.parts[0].function_call.name
         == "divide"
     )
+
+
+@pytest.mark.asyncio
+async def test_computer_use_removes_system_instruction():
+  """Test that system instruction is set to None when computer use is configured."""
+  llm = Gemini()
+
+  llm_request = LlmRequest(
+      model="gemini-1.5-flash",
+      contents=[
+          types.Content(role="user", parts=[types.Part.from_text(text="Hello")])
+      ],
+      config=types.GenerateContentConfig(
+          system_instruction="You are a helpful assistant",
+          tools=[
+              types.Tool(
+                  computer_use=types.ToolComputerUse(
+                      environment=types.Environment.ENVIRONMENT_BROWSER
+                  )
+              )
+          ],
+      ),
+  )
+
+  await llm._preprocess_request(llm_request)
+
+  # System instruction should be set to None when computer use is configured
+  assert llm_request.config.system_instruction is None
+
+
+@pytest.mark.asyncio
+async def test_computer_use_preserves_system_instruction_when_no_computer_use():
+  """Test that system instruction is preserved when computer use is not configured."""
+  llm = Gemini()
+
+  original_instruction = "You are a helpful assistant"
+  llm_request = LlmRequest(
+      model="gemini-1.5-flash",
+      contents=[
+          types.Content(role="user", parts=[types.Part.from_text(text="Hello")])
+      ],
+      config=types.GenerateContentConfig(
+          system_instruction=original_instruction,
+          tools=[
+              types.Tool(
+                  function_declarations=[
+                      types.FunctionDeclaration(name="test", description="test")
+                  ]
+              )
+          ],
+      ),
+  )
+
+  await llm._preprocess_request(llm_request)
+
+  # System instruction should be preserved when no computer use
+  assert llm_request.config.system_instruction == original_instruction
+
+
+@pytest.mark.asyncio
+async def test_computer_use_with_no_config():
+  """Test that preprocessing works when config is None."""
+  llm = Gemini()
+
+  llm_request = LlmRequest(
+      model="gemini-1.5-flash",
+      contents=[
+          types.Content(role="user", parts=[types.Part.from_text(text="Hello")])
+      ],
+      config=None,
+  )
+
+  # Should not raise an exception
+  await llm._preprocess_request(llm_request)
+
+
+@pytest.mark.asyncio
+async def test_computer_use_with_no_tools():
+  """Test that preprocessing works when config.tools is None."""
+  llm = Gemini()
+
+  original_instruction = "You are a helpful assistant"
+  llm_request = LlmRequest(
+      model="gemini-1.5-flash",
+      contents=[
+          types.Content(role="user", parts=[types.Part.from_text(text="Hello")])
+      ],
+      config=types.GenerateContentConfig(
+          system_instruction=original_instruction,
+          tools=None,
+      ),
+  )
+
+  await llm._preprocess_request(llm_request)
+
+  # System instruction should be preserved when no tools
+  assert llm_request.config.system_instruction == original_instruction
+
+
+@pytest.mark.asyncio
+async def test_adapt_computer_use_tool_wait():
+  """Test that _adapt_computer_use_tool correctly adapts wait to wait_5_seconds."""
+  from google.adk.tools.computer_use.computer_use_tool import ComputerUseTool
+
+  llm = Gemini()
+
+  # Create a mock wait tool
+  mock_wait_func = AsyncMock()
+  mock_wait_func.return_value = "mock_result"
+
+  original_wait_tool = ComputerUseTool(
+      func=mock_wait_func,
+      screen_size=(1920, 1080),
+      virtual_screen_size=(1000, 1000),
+  )
+
+  llm_request = LlmRequest(
+      model="gemini-1.5-flash",
+      config=types.GenerateContentConfig(),
+  )
+
+  # Add wait to tools_dict
+  llm_request.tools_dict["wait"] = original_wait_tool
+
+  # Call the adaptation method (now async)
+  await llm._adapt_computer_use_tool(llm_request)
+
+  # Verify wait was removed and wait_5_seconds was added
+  assert "wait" not in llm_request.tools_dict
+  assert "wait_5_seconds" in llm_request.tools_dict
+
+  # Verify the new tool has correct properties
+  wait_5_seconds_tool = llm_request.tools_dict["wait_5_seconds"]
+  assert isinstance(wait_5_seconds_tool, ComputerUseTool)
+  assert wait_5_seconds_tool._screen_size == (1920, 1080)
+  assert wait_5_seconds_tool._coordinate_space == (1000, 1000)
+
+  # Verify calling the new tool calls the original with 5 seconds
+  result = await wait_5_seconds_tool.func()
+  assert result == "mock_result"
+  mock_wait_func.assert_awaited_once_with(5)
+
+
+@pytest.mark.asyncio
+async def test_adapt_computer_use_tool_no_wait():
+  """Test that _adapt_computer_use_tool does nothing when wait is not present."""
+  llm = Gemini()
+
+  llm_request = LlmRequest(
+      model="gemini-1.5-flash",
+      config=types.GenerateContentConfig(),
+  )
+
+  # Don't add any tools
+  original_tools_dict = llm_request.tools_dict.copy()
+
+  # Call the adaptation method (now async)
+  await llm._adapt_computer_use_tool(llm_request)
+
+  # Verify tools_dict is unchanged
+  assert llm_request.tools_dict == original_tools_dict
+  assert "wait_5_seconds" not in llm_request.tools_dict
