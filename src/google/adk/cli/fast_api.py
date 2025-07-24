@@ -1103,7 +1103,7 @@ def get_fast_api_app(
         logger.info("Setting up A2A agent: %s", app_name)
 
         try:
-          if "IS_DEPLOY_TO_CLOUD_RUN" in os.environ:
+          if "GOOGLE_CLOUD_RUN_K_SERVICE" in os.environ:
             project_client = ProjectsClient()
             project_resource_path = project_client.get_project(name=f"projects/{os.getenv('GOOGLE_CLOUD_PROJECT')}").name
             project_number = project_resource_path.split('/')[-1]

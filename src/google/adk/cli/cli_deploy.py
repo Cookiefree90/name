@@ -39,7 +39,6 @@ ENV PATH="/home/myuser/.local/bin:$PATH"
 ENV GOOGLE_GENAI_USE_VERTEXAI=1
 ENV GOOGLE_CLOUD_PROJECT={gcp_project_id}
 ENV GOOGLE_CLOUD_LOCATION={gcp_region}
-ENV IS_DEPLOY_TO_CLOUD_RUN=1
 
 # Set up environment variables - End
 
@@ -240,6 +239,8 @@ def to_cloud_run(
             log_level.lower() if log_level else verbosity,
             '--labels',
             'created-by=adk',
+            '-set-env-vars',
+            'GOOGLE_CLOUD_RUN_K_SERVICE=1'
         ],
         check=True,
     )
