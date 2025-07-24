@@ -20,19 +20,19 @@ from typing import Callable
 from typing import Optional
 
 from google.auth.credentials import Credentials
+from pydantic import BaseModel
 from typing_extensions import override
 
-from ...utils.feature_decorator import experimental
-from ..function_tool import FunctionTool
-from ..tool_context import ToolContext
-from .bigquery_credentials import BigQueryCredentialsConfig
-from .bigquery_credentials import BigQueryCredentialsManager
-from .config import BigQueryToolConfig
+from ..utils.feature_decorator import experimental
+from ._google_credentials import BaseGoogleCredentialsConfig
+from ._google_credentials import GoogleCredentialsManager
+from .function_tool import FunctionTool
+from .tool_context import ToolContext
 
 
 @experimental
-class BigQueryTool(FunctionTool):
-  """GoogleApiTool class for tools that call Google APIs.
+class GoogleTool(FunctionTool):
+  """GoogleTool class for tools that call Google APIs.
 
   This class is for developers to handcraft customized Google API tools rather
   than auto generate Google API tools based on API specs.
@@ -46,8 +46,8 @@ class BigQueryTool(FunctionTool):
       self,
       func: Callable[..., Any],
       *,
-      credentials_config: Optional[BigQueryCredentialsConfig] = None,
-      bigquery_tool_config: Optional[BigQueryToolConfig] = None,
+      credentials_config: Optional[BaseGoogleCredentialsConfig] = None,
+      tool_config: Optional[BaseModel] = None,
   ):
     """Initialize the Google API tool.
 
@@ -61,13 +61,11 @@ class BigQueryTool(FunctionTool):
     self._ignore_params.append("credentials")
     self._ignore_params.append("config")
     self._credentials_manager = (
-        BigQueryCredentialsManager(credentials_config)
+        GoogleCredentialsManager(credentials_config)
         if credentials_config
         else None
     )
-    self._tool_config = (
-        bigquery_tool_config if bigquery_tool_config else BigQueryToolConfig()
-    )
+    self._tool_config = tool_config
 
   @override
   async def run_async(
@@ -108,7 +106,7 @@ class BigQueryTool(FunctionTool):
   async def _run_async_with_credential(
       self,
       credentials: Credentials,
-      tool_config: BigQueryToolConfig,
+      tool_config: BaseModel,
       args: dict[str, Any],
       tool_context: ToolContext,
   ) -> Any:
@@ -116,6 +114,7 @@ class BigQueryTool(FunctionTool):
 
     Args:
         credentials: Valid Google OAuth credentials
+        tool_config: Tool configuration
         args: Arguments passed to the tool
         tool_context: Tool execution context
 
