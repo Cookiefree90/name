@@ -39,6 +39,7 @@ ENV PATH="/home/myuser/.local/bin:$PATH"
 ENV GOOGLE_GENAI_USE_VERTEXAI=1
 ENV GOOGLE_CLOUD_PROJECT={gcp_project_id}
 ENV GOOGLE_CLOUD_LOCATION={gcp_region}
+ENV IS_DEPLOY_TO_CLOUD_RUN=1
 
 # Set up environment variables - End
 
