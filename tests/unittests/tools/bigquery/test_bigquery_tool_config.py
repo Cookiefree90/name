@@ -25,3 +25,17 @@ def test_bigquery_tool_config_experimental_warning():
       match="Config defaults may have breaking change in the future.",
   ):
     BigQueryToolConfig()
+
+
+def test_bigquery_tool_config_max_downloaded_rows_default():
+  """Test BigQueryToolConfig max_downloaded_rows default value."""
+  with pytest.warns(UserWarning):
+    config = BigQueryToolConfig()
+  assert config.max_downloaded_rows == 50
+
+
+def test_bigquery_tool_config_max_downloaded_rows_custom():
+  """Test BigQueryToolConfig max_downloaded_rows custom value."""
+  with pytest.warns(UserWarning):
+    config = BigQueryToolConfig(max_downloaded_rows=100)
+  assert config.max_downloaded_rows == 100

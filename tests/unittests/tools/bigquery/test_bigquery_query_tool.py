@@ -973,3 +973,86 @@ def test_execute_sql_result_dtype(
   # Test the tool worked without invoking default auth
   result = execute_sql(project, query, credentials, tool_config, tool_context)
   assert result == {"status": "SUCCESS", "rows": tool_result_rows}
+
+
+def test_execute_sql_max_rows_config():
+  """Test execute_sql tool respects max_downloaded_rows from config."""
+  project = "my_project"
+  query = "SELECT 123 AS num"
+  statement_type = "SELECT"
+  query_result = [{"num": i} for i in range(20)]  # 20 rows
+  credentials = mock.create_autospec(Credentials, instance=True)
+  tool_config = BigQueryToolConfig(max_downloaded_rows=10)
+  tool_context = mock.create_autospec(ToolContext, instance=True)
+
+  with mock.patch("google.cloud.bigquery.Client", autospec=False) as Client:
+    bq_client = Client.return_value
+    query_job = mock.create_autospec(bigquery.QueryJob)
+    query_job.statement_type = statement_type
+    bq_client.query.return_value = query_job
+    bq_client.query_and_wait.return_value = query_result[:10]
+
+    result = execute_sql(project, query, credentials, tool_config, tool_context)
+    
+    # Check that max_results was called with config value
+    bq_client.query_and_wait.assert_called_once()
+    call_args = bq_client.query_and_wait.call_args
+    assert call_args.kwargs["max_results"] == 10
+    
+    # Check truncation flag is set
+    assert result["status"] == "SUCCESS"
+    assert result["result_is_likely_truncated"] is True
+
+
+def test_execute_sql_max_rows_parameter():
+  """Test execute_sql tool respects max_rows parameter."""
+  project = "my_project"
+  query = "SELECT 123 AS num"
+  statement_type = "SELECT"
+  query_result = [{"num": i} for i in range(20)]  # 20 rows
+  credentials = mock.create_autospec(Credentials, instance=True)
+  tool_config = BigQueryToolConfig(max_downloaded_rows=10)
+  tool_context = mock.create_autospec(ToolContext, instance=True)
+
+  with mock.patch("google.cloud.bigquery.Client", autospec=False) as Client:
+    bq_client = Client.return_value
+    query_job = mock.create_autospec(bigquery.QueryJob)
+    query_job.statement_type = statement_type
+    bq_client.query.return_value = query_job
+    bq_client.query_and_wait.return_value = query_result[:5]
+
+    # Parameter should override config
+    result = execute_sql(project, query, credentials, tool_config, tool_context, max_rows=5)
+    
+    # Check that max_results was called with parameter value
+    bq_client.query_and_wait.assert_called_once()
+    call_args = bq_client.query_and_wait.call_args
+    assert call_args.kwargs["max_results"] == 5
+    
+    # Check truncation flag is set
+    assert result["status"] == "SUCCESS"
+    assert result["result_is_likely_truncated"] is True
+
+
+def test_execute_sql_no_truncation():
+  """Test execute_sql tool when results are not truncated."""
+  project = "my_project"
+  query = "SELECT 123 AS num"
+  statement_type = "SELECT"
+  query_result = [{"num": i} for i in range(3)]  # Only 3 rows
+  credentials = mock.create_autospec(Credentials, instance=True)
+  tool_config = BigQueryToolConfig(max_downloaded_rows=10)
+  tool_context = mock.create_autospec(ToolContext, instance=True)
+
+  with mock.patch("google.cloud.bigquery.Client", autospec=False) as Client:
+    bq_client = Client.return_value
+    query_job = mock.create_autospec(bigquery.QueryJob)
+    query_job.statement_type = statement_type
+    bq_client.query.return_value = query_job
+    bq_client.query_and_wait.return_value = query_result
+
+    result = execute_sql(project, query, credentials, tool_config, tool_context)
+    
+    # Check no truncation flag when fewer rows than limit
+    assert result["status"] == "SUCCESS"
+    assert "result_is_likely_truncated" not in result

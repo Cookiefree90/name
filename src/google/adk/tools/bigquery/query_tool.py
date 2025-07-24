@@ -27,7 +27,6 @@ from ..tool_context import ToolContext
 from .config import BigQueryToolConfig
 from .config import WriteMode
 
-MAX_DOWNLOADED_QUERY_RESULT_ROWS = 50
 BIGQUERY_SESSION_INFO_KEY = "bigquery_session_info"
 
 
@@ -37,6 +36,7 @@ def execute_sql(
     credentials: Credentials,
     config: BigQueryToolConfig,
     tool_context: ToolContext,
+    max_rows: int | None = None,
 ) -> dict:
   """Run a BigQuery or BigQuery ML SQL query in the project and return the result.
 
@@ -160,7 +160,7 @@ def execute_sql(
         query,
         job_config=job_config,
         project=project_id,
-        max_results=MAX_DOWNLOADED_QUERY_RESULT_ROWS,
+        max_results=max_rows or (config.max_downloaded_rows if config else 50),
     )
     rows = []
     for row in row_iterator:
@@ -175,9 +175,10 @@ def execute_sql(
       rows.append(row_values)
 
     result = {"status": "SUCCESS", "rows": rows}
+    max_downloaded_rows = max_rows or (config.max_downloaded_rows if config else 50)
     if (
-        MAX_DOWNLOADED_QUERY_RESULT_ROWS is not None
-        and len(rows) == MAX_DOWNLOADED_QUERY_RESULT_ROWS
+        max_downloaded_rows is not None
+        and len(rows) == max_downloaded_rows
     ):
       result["result_is_likely_truncated"] = True
     return result
