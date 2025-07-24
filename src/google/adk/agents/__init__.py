@@ -20,6 +20,7 @@ from .llm_agent import Agent
 from .llm_agent import LlmAgent
 from .loop_agent import LoopAgent
 from .parallel_agent import ParallelAgent
+from .conditional_agent import ConditionalAgent
 from .run_config import RunConfig
 from .sequential_agent import SequentialAgent
 
@@ -29,6 +30,7 @@ __all__ = [
     'LlmAgent',
     'LoopAgent',
     'ParallelAgent',
+    'ConditionalAgent',
     'SequentialAgent',
     'InvocationContext',
     'LiveRequest',
