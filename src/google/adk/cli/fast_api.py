@@ -40,6 +40,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocket
 from fastapi.websockets import WebSocketDisconnect
+from google.cloud.resourcemanager_v3 import ProjectsClient
 from google.genai import types
 import graphviz
 from opentelemetry import trace
@@ -1102,7 +1103,15 @@ def get_fast_api_app(
         logger.info("Setting up A2A agent: %s", app_name)
 
         try:
-          a2a_rpc_path = f"http://{host}:{port}/a2a/{app_name}"
+          if "K_SERVICE" in os.environ: # Indicating Cloud Run
+            project_client = ProjectsClient()
+            project_resource_path = project_client.get_project(name=f"projects/{os.getenv('GOOGLE_CLOUD_PROJECT')}").name
+            project_number = project_resource_path.split('/')[-1]
+            cloud_run_service_url = f"{os.getenv('K_SERVICE')}-{project_number}.{os.getenv('GOOGLE_CLOUD_LOCATION')}.run.app"
+            a2a_rpc_path = f"https://{cloud_run_service_url}/a2a/{app_name}"
+            logger.info("Constructed Cloud Run URL to A2A App: %s", a2a_rpc_path)
+          else:
+            a2a_rpc_path = f"http://{host}:{port}/a2a/{app_name}"
 
           agent_executor = A2aAgentExecutor(
               runner=create_a2a_runner_loader(app_name),
