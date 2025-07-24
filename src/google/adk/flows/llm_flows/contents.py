@@ -226,6 +226,7 @@ def _get_contents(
         or not event.content.role
         or not event.content.parts
         or event.content.parts[0].text == ''
+        and not event.content.parts[0].function_response
     ):
       # Skip events without content, or generated neither by user nor by model
       # or has empty text.
