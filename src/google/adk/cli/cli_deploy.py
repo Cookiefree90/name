@@ -239,7 +239,7 @@ def to_cloud_run(
             log_level.lower() if log_level else verbosity,
             '--labels',
             'created-by=adk',
-            '-set-env-vars',
+            '--set-env-vars',
             'GOOGLE_CLOUD_RUN_K_SERVICE=1'
         ],
         check=True,
