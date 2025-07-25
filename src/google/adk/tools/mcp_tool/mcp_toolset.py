@@ -14,12 +14,15 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import sys
 from typing import List
 from typing import Optional
 from typing import TextIO
 from typing import Union
+
+from fastapi.openapi.models import APIKeyIn
 
 from ...agents.readonly_context import ReadonlyContext
 from ...auth.auth_credential import AuthCredential
@@ -146,8 +149,15 @@ class MCPToolset(BaseToolset):
     Returns:
         List[BaseTool]: A list of tools available under the specified context.
     """
+    # Get authentication headers based on the auth scheme and credential
+    authentication_headers = await self._get_headers(
+        self._auth_credential, self._auth_scheme
+    )
+
     # Get session from session manager
-    session = await self._mcp_session_manager.create_session()
+    session = await self._mcp_session_manager.create_session(
+        authentication_headers
+    )
 
     # Fetch available tools from the MCP server
     tools_response: ListToolsResult = await session.list_tools()
@@ -165,6 +175,79 @@ class MCPToolset(BaseToolset):
       if self._is_tool_selected(mcp_tool, readonly_context):
         tools.append(mcp_tool)
     return tools
+
+  @staticmethod
+  async def _get_headers(
+      credential: AuthCredential, auth_scheme: AuthScheme
+  ) -> Optional[dict[str, str]]:
+    """Extracts authentication headers from credentials.
+
+    Args:
+        credential: The authentication credential to process.
+
+    Returns:
+        Dictionary of headers to add to the request, or None if no auth.
+
+    Raises:
+        ValueError: If API key authentication is configured for non-header location.
+    """
+    headers: Optional[dict[str, str]] = None
+    if credential:
+      if credential.oauth2:
+        headers = {"Authorization": f"Bearer {credential.oauth2.access_token}"}
+      elif credential.http:
+        # Handle HTTP authentication schemes
+        if (
+            credential.http.scheme.lower() == "bearer"
+            and credential.http.credentials.token
+        ):
+          headers = {
+              "Authorization": f"Bearer {credential.http.credentials.token}"
+          }
+        elif credential.http.scheme.lower() == "basic":
+          # Handle basic auth
+          if (
+              credential.http.credentials.username
+              and credential.http.credentials.password
+          ):
+            credentials = f"{credential.http.credentials.username}:{credential.http.credentials.password}"
+            encoded_credentials = base64.b64encode(
+                credentials.encode()
+            ).decode()
+            headers = {"Authorization": f"Basic {encoded_credentials}"}
+        elif credential.http.credentials.token:
+          # Handle other HTTP schemes with token
+          headers = {
+              "Authorization": (
+                  f"{credential.http.scheme} {credential.http.credentials.token}"
+              )
+          }
+      elif credential.api_key:
+        if not auth_scheme or not credential:
+          error_msg = (
+              "Cannot find corresponding auth scheme for API key credential"
+              f" {credential}"
+          )
+          logger.error(error_msg)
+          raise ValueError(error_msg)
+        elif auth_scheme.in_ != APIKeyIn.header:
+          error_msg = (
+              "MCPTool only supports header-based API key authentication."
+              " Configured location:"
+              f" {auth_scheme.in_}"
+          )
+          logger.error(error_msg)
+          raise ValueError(error_msg)
+        else:
+          headers = {auth_scheme.name: credential.api_key}
+      elif credential.service_account:
+        # Service accounts should be exchanged for access tokens before reaching this point
+        logger.warning(
+            "Service account credentials should be exchanged before MCP"
+            " session creation"
+        )
+
+    return headers
 
   async def close(self) -> None:
     """Performs cleanup and releases resources held by the toolset.
