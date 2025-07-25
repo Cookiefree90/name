@@ -223,26 +223,26 @@ def to_cloud_run(
     region_options = ['--region', region] if region else []
     project = _resolve_project(project)
     subprocess.run(
-        [
-            'gcloud',
-            'run',
-            'deploy',
-            service_name,
-            '--source',
-            temp_folder,
-            '--project',
-            project,
-            *region_options,
-            '--port',
-            str(port),
-            '--verbosity',
-            log_level.lower() if log_level else verbosity,
-            '--labels',
-            'created-by=adk',
-            '--set-env-vars',
-            'GOOGLE_CLOUD_RUN_K_SERVICE=1'
-        ],
-        check=True,
+      [
+        'gcloud',
+        'run',
+        'deploy',
+        service_name,
+        '--source',
+        temp_folder,
+        '--project',
+        project,
+        *region_options,
+        '--port',
+        str(port),
+        '--verbosity',
+        log_level.lower() if log_level else verbosity,
+        '--labels',
+        'created-by=adk',
+        '--set-env-vars',
+        'GOOGLE_CLOUD_RUN_K_SERVICE=1'
+      ],
+      check=True,
     )
   finally:
     click.echo(f'Cleaning up the temp folder: {temp_folder}')
