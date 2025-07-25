@@ -11,10 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from __future__ import annotations
 
-MISSING_EVAL_DEPENDENCIES_MESSAGE = (
-    'Eval module is not installed, please install via `pip install'
-    ' "google-adk[eval]"`.'
-)
+from typing import Generic
+from typing import TypeVar
+
+import pydantic
+
+T = TypeVar("T")
+
+
+class SharedValue(pydantic.BaseModel, Generic[T]):
+  """Simple wrapper around a value to allow modifying it from callbacks."""
+
+  model_config = pydantic.ConfigDict(
+      arbitrary_types_allowed=True,
+  )
+  value: T

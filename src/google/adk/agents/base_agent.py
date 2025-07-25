@@ -32,7 +32,6 @@ from typing import Union
 
 from google.genai import types
 from opentelemetry import trace
-from pydantic import alias_generators
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
@@ -568,7 +567,7 @@ class SubAgentConfig(BaseModel):
 
     ```
     # my_library/custom_agents.py
-    from google.adk.agents import LlmAgent
+    from google.adk.agents.llm_agent import LlmAgent
 
     my_custom_agent = LlmAgent(
         name="my_custom_agent",
@@ -605,11 +604,7 @@ class BaseAgentConfig(BaseModel):
   Do not use this class directly. It's the base class for all agent configs.
   """
 
-  model_config = ConfigDict(
-      extra='forbid',
-      alias_generator=alias_generators.to_camel,
-      populate_by_name=True,
-  )
+  model_config = ConfigDict(extra='forbid')
 
   agent_class: Literal['BaseAgent'] = 'BaseAgent'
   """Required. The class of the agent. The value is used to differentiate
