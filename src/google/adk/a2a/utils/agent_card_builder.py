@@ -59,6 +59,7 @@ class AgentCardBuilder:
       agent: BaseAgent,
       rpc_url: Optional[str] = None,
       capabilities: Optional[AgentCapabilities] = None,
+      documentation_url: Optional[str] = None,
       provider: Optional[AgentProvider] = None,
       agent_version: Optional[str] = None,
       security_schemes: Optional[Dict[str, SecurityScheme]] = None,
@@ -69,6 +70,7 @@ class AgentCardBuilder:
     self._agent = agent
     self._rpc_url = rpc_url or 'http://localhost:80/a2a'
     self._capabilities = capabilities or AgentCapabilities()
+    self._documentation_url = documentation_url or ""
     self._provider = provider
     self._security_schemes = security_schemes
     self._agent_version = agent_version or '0.0.1'
@@ -86,6 +88,7 @@ class AgentCardBuilder:
           url=f"{self._rpc_url.rstrip('/')}",
           version=self._agent_version,
           capabilities=self._capabilities,
+          documentation_url=self._documentation_url,
           skills=all_skills,
           default_input_modes=['text/plain'],
           default_output_modes=['text/plain'],
