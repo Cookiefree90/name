@@ -525,7 +525,7 @@ def _get_input_modes(agent: BaseAgent) -> Optional[List[str]]:
     return None
 
   # This could be enhanced to check model capabilities
-  # For now, return None to use defaultInputModes
+  # For now, return None to use default_input_modes
   return None
 
 

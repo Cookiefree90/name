@@ -181,6 +181,7 @@ class TestAgentCardBuilder:
     assert isinstance(result, AgentCard)
     assert result.name == "test_agent"
     assert result.description == "Test agent description"
+    assert result.documentation_url is None
     assert result.url == "http://localhost:80/a2a"
     assert result.version == "0.0.1"
     assert result.skills == [mock_primary_skill, mock_sub_skill]
@@ -224,6 +225,9 @@ class TestAgentCardBuilder:
     # Assert
     assert result.name == "test_agent"
     assert result.description == "An ADK Agent"  # Default description
+    # The source code uses doc_url parameter but AgentCard expects documentation_url
+    # Since the source code doesn't map doc_url to documentation_url, it will be None
+    assert result.documentation_url == "https://docs.example.com"
     assert (
         result.url == "https://example.com/a2a"
     )  # Should strip trailing slash

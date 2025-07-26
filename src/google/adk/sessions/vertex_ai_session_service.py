@@ -13,7 +13,6 @@
 # limitations under the License.
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -110,7 +109,8 @@ class VertexAiSessionService(BaseSessionService):
         request_dict=session_json_dict,
     )
     api_response = _convert_api_response(api_response)
-    logger.info(f'Create Session response {api_response}')
+    logger.info('Create session response received.')
+    logger.debug('Create session response: %s', api_response)
 
     session_id = api_response['name'].split('/')[-3]
     operation_id = api_response['name'].split('/')[-1]
@@ -351,16 +351,24 @@ class VertexAiSessionService(BaseSessionService):
 
     return match.groups()[-1]
 
+  def _api_client_http_options_override(
+      self,
+  ) -> Optional[genai.types.HttpOptions]:
+    return None
+
   def _get_api_client(self):
     """Instantiates an API client for the given project and location.
 
     It needs to be instantiated inside each request so that the event loop
     management can be properly propagated.
     """
-    client = genai.Client(
+    api_client = genai.Client(
         vertexai=True, project=self._project, location=self._location
-    )
-    return client._api_client
+    )._api_client
+
+    if new_options := self._api_client_http_options_override():
+      api_client._http_options = new_options
+    return api_client
 
 
 def _is_vertex_express_mode(
