@@ -382,7 +382,7 @@ class RestApiTool(BaseTool):
     for api_param in api_params:
       if api_param.py_name not in api_args:
         if api_param.required and api_param.param_schema.default:
-          api_args[api_param.py_name]=api_param.param_schema.default    
+          api_args[api_param.py_name] = api_param.param_schema.default    
 
     if auth_credential:
       # Attach parameters from auth into main parameters list
