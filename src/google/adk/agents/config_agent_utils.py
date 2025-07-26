@@ -24,12 +24,12 @@ import yaml
 from ..utils.feature_decorator import working_in_progress
 from .agent_config import AgentConfig
 from .base_agent import BaseAgent
-from .base_agent import SubAgentConfig
+from .base_agent_config import SubAgentConfig
 from .common_configs import CodeConfig
 from .llm_agent import LlmAgent
-from .llm_agent import LlmAgentConfig
+from .llm_agent_config import LlmAgentConfig
 from .loop_agent import LoopAgent
-from .loop_agent import LoopAgentConfig
+from .loop_agent_config import LoopAgentConfig
 from .parallel_agent import ParallelAgent
 from .parallel_agent import ParallelAgentConfig
 from .sequential_agent import SequentialAgent
