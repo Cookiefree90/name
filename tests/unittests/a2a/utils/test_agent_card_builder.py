@@ -181,7 +181,7 @@ class TestAgentCardBuilder:
     assert isinstance(result, AgentCard)
     assert result.name == "test_agent"
     assert result.description == "Test agent description"
-    assert result.documentation_url is None
+    assert result.documentation_url == ""
     assert result.url == "http://localhost:80/a2a"
     assert result.version == "0.0.1"
     assert result.skills == [mock_primary_skill, mock_sub_skill]
