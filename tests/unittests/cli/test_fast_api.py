@@ -33,7 +33,7 @@ from google.adk.evaluation.eval_case import Invocation
 from google.adk.evaluation.eval_result import EvalSetResult
 from google.adk.evaluation.eval_set import EvalSet
 from google.adk.evaluation.in_memory_eval_sets_manager import InMemoryEvalSetsManager
-from google.adk.events import Event
+from google.adk.events.event import Event
 from google.adk.runners import Runner
 from google.adk.sessions.base_session_service import ListSessionsResponse
 from google.genai import types
@@ -188,6 +188,9 @@ def mock_agent_loader():
 
     def load_agent(self, app_name):
       return root_agent
+
+    def list_agents(self):
+      return ["test_app"]
 
   return MockAgentLoader(".")
 
@@ -840,6 +843,23 @@ def test_run_eval(test_app, create_test_eval_set):
   assert response.status_code == 200
   data = response.json()
   assert data == [f"{info['app_name']}_test_eval_set_id_eval_result"]
+
+
+def test_list_eval_metrics(test_app):
+  """Test listing eval metrics."""
+  url = "/apps/test_app/eval_metrics"
+  response = test_app.get(url)
+
+  # Verify the response
+  assert response.status_code == 200
+  data = response.json()
+  assert isinstance(data, list)
+  # Add more assertions based on the expected metrics
+  assert len(data) > 0
+  for metric in data:
+    assert "metricName" in metric
+    assert "description" in metric
+    assert "metricValueInfo" in metric
 
 
 def test_debug_trace(test_app):

@@ -18,16 +18,15 @@ from __future__ import annotations
 
 import asyncio
 from typing import AsyncGenerator
-from typing import Literal
 from typing import Type
 
 from typing_extensions import override
 
-from ..agents.base_agent import BaseAgentConfig
-from ..agents.base_agent import working_in_progress
-from ..agents.invocation_context import InvocationContext
 from ..events.event import Event
+from ..utils.feature_decorator import working_in_progress
 from .base_agent import BaseAgent
+from .invocation_context import InvocationContext
+from .parallel_agent_config import ParallelAgentConfig
 
 
 def _create_branch_ctx_for_sub_agent(
@@ -125,10 +124,3 @@ class ParallelAgent(BaseAgent):
       config_abs_path: str,
   ) -> ParallelAgent:
     return super().from_config(config, config_abs_path)
-
-
-@working_in_progress('ParallelAgentConfig is not ready for use.')
-class ParallelAgentConfig(BaseAgentConfig):
-  """The config for the YAML schema of a ParallelAgent."""
-
-  agent_class: Literal['ParallelAgent'] = 'ParallelAgent'

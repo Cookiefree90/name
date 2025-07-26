@@ -66,7 +66,9 @@ class VertexAiMemoryBankService(BaseMemoryService):
 
     events = []
     for event in session.events:
-      if event.content and event.content.parts:
+      if _should_filter_out_event(event.content):
+        continue
+      if event.content:
         events.append({
             'content': event.content.model_dump(exclude_none=True, mode='json')
         })
@@ -86,7 +88,8 @@ class VertexAiMemoryBankService(BaseMemoryService):
           path=f'reasoningEngines/{self._agent_engine_id}/memories:generate',
           request_dict=request_dict,
       )
-      logger.info('Generate memory response: %s', api_response)
+      logger.info('Generate memory response received.')
+      logger.debug('Generate memory response: %s', api_response)
     else:
       logger.info('No events to add to memory.')
 
@@ -108,7 +111,8 @@ class VertexAiMemoryBankService(BaseMemoryService):
         },
     )
     api_response = _convert_api_response(api_response)
-    logger.info('Search memory response: %s', api_response)
+    logger.info('Search memory response received.')
+    logger.debug('Search memory response: %s', api_response)
 
     if not api_response or not api_response.get('retrievedMemories', None):
       return SearchMemoryResponse()
@@ -148,3 +152,13 @@ def _convert_api_response(api_response) -> Dict[str, Any]:
   if hasattr(api_response, 'body'):
     return json.loads(api_response.body)
   return api_response
+
+
+def _should_filter_out_event(content: types.Content) -> bool:
+  """Returns whether the event should be filtered out."""
+  if not content or not content.parts:
+    return True
+  for part in content.parts:
+    if part.text or part.inline_data or part.file_data:
+      return False
+  return True
