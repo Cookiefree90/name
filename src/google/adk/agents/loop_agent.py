@@ -16,10 +16,7 @@
 
 from __future__ import annotations
 
-from typing import Any
 from typing import AsyncGenerator
-from typing import Dict
-from typing import Literal
 from typing import Optional
 from typing import Type
 
@@ -29,7 +26,7 @@ from ..agents.invocation_context import InvocationContext
 from ..events.event import Event
 from ..utils.feature_decorator import working_in_progress
 from .base_agent import BaseAgent
-from .base_agent import BaseAgentConfig
+from .loop_agent_config import LoopAgentConfig
 
 
 class LoopAgent(BaseAgent):
@@ -53,10 +50,15 @@ class LoopAgent(BaseAgent):
     times_looped = 0
     while not self.max_iterations or times_looped < self.max_iterations:
       for sub_agent in self.sub_agents:
+        should_exit = False
         async for event in sub_agent.run_async(ctx):
           yield event
           if event.actions.escalate:
-            return
+            should_exit = True
+
+        if should_exit:
+          return
+
       times_looped += 1
     return
 
@@ -79,13 +81,3 @@ class LoopAgent(BaseAgent):
     if config.max_iterations:
       agent.max_iterations = config.max_iterations
     return agent
-
-
-@working_in_progress('LoopAgentConfig is not ready for use.')
-class LoopAgentConfig(BaseAgentConfig):
-  """The config for the YAML schema of a LoopAgent."""
-
-  agent_class: Literal['LoopAgent'] = 'LoopAgent'
-
-  max_iterations: Optional[int] = None
-  """Optional. LoopAgent.max_iterations."""
