@@ -28,6 +28,7 @@ from .config import BigQueryToolConfig
 from .config import WriteMode
 
 BIGQUERY_SESSION_INFO_KEY = "bigquery_session_info"
+_DEFAULT_MAX_DOWNLOADED_QUERY_RESULT_ROWS = 50
 
 
 def execute_sql(
@@ -156,11 +157,12 @@ def execute_sql(
         if bq_connection_properties
         else None
     )
+    max_downloaded_rows = max_rows or (config.max_downloaded_rows if config else _DEFAULT_MAX_DOWNLOADED_QUERY_RESULT_ROWS)
     row_iterator = bq_client.query_and_wait(
         query,
         job_config=job_config,
         project=project_id,
-        max_results=max_rows or (config.max_downloaded_rows if config else 50),
+        max_results=max_downloaded_rows,
     )
     rows = []
     for row in row_iterator:
@@ -175,11 +177,7 @@ def execute_sql(
       rows.append(row_values)
 
     result = {"status": "SUCCESS", "rows": rows}
-    max_downloaded_rows = max_rows or (config.max_downloaded_rows if config else 50)
-    if (
-        max_downloaded_rows is not None
-        and len(rows) == max_downloaded_rows
-    ):
+    if len(rows) == max_downloaded_rows:
       result["result_is_likely_truncated"] = True
     return result
   except Exception as ex:
