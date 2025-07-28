@@ -53,7 +53,7 @@ def create_agent() -> LlmAgent:
                   ),
                   timeout=5,
               ),
-              context_to_env_mapper_callback=user_token_env_mapper,
+              get_env_from_context_fn=user_token_env_mapper,
               tool_filter=["read_file", "list_directory"],
           )
       ],

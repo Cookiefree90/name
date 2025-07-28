@@ -48,7 +48,7 @@ class TestMCPEnvironmentIntegration:
   """Integration tests for MCP environment variable functionality."""
 
   def create_test_agent_with_env_callback(
-      self, context_to_env_mapper_callback=None
+      self, get_env_from_context_fn=None
   ) -> LlmAgent:
     """Create a test agent with MCP toolset and context to env mapper callback."""
     # Create a temporary directory for the filesystem server
@@ -72,7 +72,7 @@ class TestMCPEnvironmentIntegration:
                     ],
                     env={'INITIAL_VAR': 'initial_value'},
                 ),
-                context_to_env_mapper_callback=context_to_env_mapper_callback,
+                get_env_from_context_fn=get_env_from_context_fn,
                 tool_filter=[
                     'read_file',
                     'list_directory',
@@ -82,7 +82,7 @@ class TestMCPEnvironmentIntegration:
         ],
     )
 
-  def sample_context_to_env_mapper_callback(
+  def sample_get_env_from_context_fn(
       self, state_dict: Dict[str, Any]
   ) -> Dict[str, str]:
     """Sample context to env mapper callback."""
@@ -110,7 +110,7 @@ class TestMCPEnvironmentIntegration:
     """Test environment variable extraction from session state and injection into MCP server."""
     # Create agent with environment callback
     agent = self.create_test_agent_with_env_callback(
-        context_to_env_mapper_callback=self.sample_context_to_env_mapper_callback
+        get_env_from_context_fn=self.sample_get_env_from_context_fn
     )
 
     # Create test runner
@@ -219,7 +219,7 @@ class TestMCPEnvironmentIntegration:
     """Test that no environment variables are extracted when no callback is provided."""
     # Create agent without environment callback
     agent = self.create_test_agent_with_env_callback(
-        context_to_env_mapper_callback=None
+        get_env_from_context_fn=None
     )
 
     # Create test runner
@@ -321,7 +321,7 @@ class TestMCPEnvironmentIntegration:
 
     # Create agent with failing callback
     agent = self.create_test_agent_with_env_callback(
-        context_to_env_mapper_callback=failing_env_callback
+        get_env_from_context_fn=failing_env_callback
     )
 
     # Create test runner
@@ -365,8 +365,8 @@ class TestMCPEnvironmentIntegration:
     def mock_extract_env_from_context(self, readonly_context):
       # Simulate the failing callback - should catch exception and return empty dict
       try:
-        if self._context_to_env_mapper_callback:
-          return self._context_to_env_mapper_callback(readonly_context.state)
+        if self._get_env_from_context_fn:
+          return self._get_env_from_context_fn(readonly_context.state)
         return {}
       except Exception:
         # The real implementation should catch exceptions and return empty dict
@@ -422,7 +422,7 @@ class TestMCPEnvironmentIntegration:
     """Test environment variable extraction with empty session state."""
     # Create agent with environment callback
     agent = self.create_test_agent_with_env_callback(
-        context_to_env_mapper_callback=self.sample_context_to_env_mapper_callback
+        get_env_from_context_fn=self.sample_get_env_from_context_fn
     )
 
     # Create test runner
@@ -464,8 +464,8 @@ class TestMCPEnvironmentIntegration:
     # Mock the _extract_env_from_context method to return empty dict (empty state)
     def mock_extract_env_from_context(self, readonly_context):
       # With empty session state, should return empty dict
-      if self._context_to_env_mapper_callback:
-        return self._context_to_env_mapper_callback(readonly_context.state)
+      if self._get_env_from_context_fn:
+        return self._get_env_from_context_fn(readonly_context.state)
       return {}
 
     # Create mock instances that behave like the real ones
@@ -526,7 +526,7 @@ class TestMCPEnvironmentIntegration:
         tools=[
             MCPToolset(
                 connection_params=SseServerParams(url='http://example.com/sse'),
-                context_to_env_mapper_callback=self.sample_context_to_env_mapper_callback,
+                get_env_from_context_fn=self.sample_get_env_from_context_fn,
             )
         ],
     )
@@ -596,7 +596,7 @@ class TestMCPEnvironmentIntegration:
       # Verify SSE client was called (not stdio client)
       mock_sse_client.assert_called_once()
 
-  def test_context_to_env_mapper_callback_signature(self):
+  def test_get_env_from_context_fn_signature(self):
     """Test that environment transform callback has correct signature."""
 
     def valid_callback(state_dict: Dict[str, Any]) -> Dict[str, str]:
@@ -604,7 +604,7 @@ class TestMCPEnvironmentIntegration:
 
     # Create agent with valid callback
     agent = self.create_test_agent_with_env_callback(
-        context_to_env_mapper_callback=valid_callback
+        get_env_from_context_fn=valid_callback
     )
 
     # Verify agent was created successfully
@@ -613,7 +613,7 @@ class TestMCPEnvironmentIntegration:
 
     # Verify callback was set in the toolset
     mcp_toolset = agent.tools[0]
-    assert mcp_toolset._context_to_env_mapper_callback == valid_callback
+    assert mcp_toolset._get_env_from_context_fn == valid_callback
 
   @pytest.mark.asyncio
   async def test_session_manager_direct_env_injection(self, llm_backend):
@@ -629,7 +629,7 @@ class TestMCPEnvironmentIntegration:
 
     session_manager = MCPSessionManager(
         connection_params=connection_params,
-        context_to_env_mapper_callback=test_env_callback,
+        get_env_from_context_fn=test_env_callback,
     )
 
     # Create mock readonly context with state

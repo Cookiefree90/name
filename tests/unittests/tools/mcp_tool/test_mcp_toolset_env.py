@@ -17,12 +17,12 @@
 from types import MappingProxyType
 from typing import Any
 from typing import Dict
+from typing import Mapping
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from google.adk.agents.readonly_context import ReadonlyContext
-from google.adk.tools.mcp_tool.mcp_session_manager import ContextToEnvMapperCallback
 import pytest
 
 
@@ -73,10 +73,10 @@ def mock_stdio_params():
 
 
 @pytest.fixture
-def sample_context_to_env_mapper_callback():
-  """Create a sample context to env mapper callback."""
+def sample_get_env_from_context_fn():
+  """Create a sample get_env_from_context_fn callback."""
 
-  def env_callback(state: Dict[str, Any]) -> Dict[str, str]:
+  def env_callback(state: Mapping[str, Any]) -> Dict[str, str]:
     env_vars = {}
     if 'api_key' in state:
       env_vars['API_KEY'] = state['api_key']
@@ -103,7 +103,7 @@ class TestMCPToolsetEnv:
   """Test environment variable functionality in MCPToolset."""
 
   def test_init_with_env_callback(
-      self, mock_stdio_params, sample_context_to_env_mapper_callback
+      self, mock_stdio_params, sample_get_env_from_context_fn
   ):
     """Test MCPToolset initialization with context to env mapper callback."""
     with patch(
@@ -111,19 +111,19 @@ class TestMCPToolsetEnv:
     ) as mock_session_manager:
       toolset = MCPToolset(
           connection_params=mock_stdio_params,
-          context_to_env_mapper_callback=sample_context_to_env_mapper_callback,
+          get_env_from_context_fn=sample_get_env_from_context_fn,
       )
 
-      # Verify the session manager was created with the context to env mapper callback
+      # Verify the session manager was created without the env callback
+      # (since it's now handled in MCPToolset)
       mock_session_manager.assert_called_once_with(
           connection_params=mock_stdio_params,
           errlog=toolset._errlog,
-          context_to_env_mapper_callback=sample_context_to_env_mapper_callback,
       )
 
       assert (
-          toolset._context_to_env_mapper_callback
-          == sample_context_to_env_mapper_callback
+          toolset._get_env_from_context_fn
+          == sample_get_env_from_context_fn
       )
 
   def test_init_without_env_callback(self, mock_stdio_params):
@@ -137,19 +137,18 @@ class TestMCPToolsetEnv:
       mock_session_manager.assert_called_once_with(
           connection_params=mock_stdio_params,
           errlog=toolset._errlog,
-          context_to_env_mapper_callback=None,
       )
 
-      assert toolset._context_to_env_mapper_callback is None
+      assert toolset._get_env_from_context_fn is None
 
   @pytest.mark.asyncio
-  async def test_get_tools_passes_context_to_session_manager(
+  async def test_get_tools_extracts_env_and_calls_session_manager(
       self,
       mock_stdio_params,
-      sample_context_to_env_mapper_callback,
+      sample_get_env_from_context_fn,
       mock_readonly_context,
   ):
-    """Test that get_tools passes readonly_context to session manager."""
+    """Test that get_tools extracts environment variables and calls session manager correctly."""
     with patch(
         'google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager'
     ) as mock_session_manager_class:
@@ -162,20 +161,22 @@ class TestMCPToolsetEnv:
 
       toolset = MCPToolset(
           connection_params=mock_stdio_params,
-          context_to_env_mapper_callback=sample_context_to_env_mapper_callback,
+          get_env_from_context_fn=sample_get_env_from_context_fn,
       )
 
       # Call get_tools with readonly_context
       await toolset.get_tools(mock_readonly_context)
 
-      # Verify create_session was called with the readonly_context
-      mock_session_manager.create_session.assert_called_once_with(
-          mock_readonly_context
-      )
+      # Verify create_session was called without parameters (new architecture)
+      mock_session_manager.create_session.assert_called_once_with()
+      
+      # Verify that the session manager was updated with new connection params
+      # (this happens when environment variables are extracted and injected)
+      mock_session_manager.update_connection_params.assert_called_once()
 
   @pytest.mark.asyncio
   async def test_get_tools_without_context(
-      self, mock_stdio_params, sample_context_to_env_mapper_callback
+      self, mock_stdio_params, sample_get_env_from_context_fn
   ):
     """Test that get_tools works without readonly_context."""
     with patch(
@@ -190,14 +191,17 @@ class TestMCPToolsetEnv:
 
       toolset = MCPToolset(
           connection_params=mock_stdio_params,
-          context_to_env_mapper_callback=sample_context_to_env_mapper_callback,
+          get_env_from_context_fn=sample_get_env_from_context_fn,
       )
 
       # Call get_tools without readonly_context
       await toolset.get_tools(None)
 
-      # Verify create_session was called with None
-      mock_session_manager.create_session.assert_called_once_with(None)
+      # Verify create_session was called without parameters (new architecture)
+      mock_session_manager.create_session.assert_called_once_with()
+      
+      # Verify that update_connection_params was NOT called since no context was provided
+      mock_session_manager.update_connection_params.assert_not_called()
 
 
 
@@ -207,7 +211,7 @@ class TestMCPToolsetEnv:
     def auth_callback(state):
       return None, None
 
-    def env_callback(state):
+    def env_callback(state: Mapping[str, Any]) -> Dict[str, str]:
       return {'TEST_VAR': 'test_value'}
 
     with patch(
@@ -215,19 +219,18 @@ class TestMCPToolsetEnv:
     ) as mock_session_manager:
       toolset = MCPToolset(
           connection_params=mock_stdio_params,
-          auth_transform_callback=auth_callback,
-          context_to_env_mapper_callback=env_callback,
+          get_auth_from_context_fn=auth_callback,
+          get_env_from_context_fn=env_callback,
       )
 
       # Verify both callbacks are stored
-      assert toolset._auth_transform_callback == auth_callback
-      assert toolset._context_to_env_mapper_callback == env_callback
+      assert toolset._get_auth_from_context_fn == auth_callback
+      assert toolset._get_env_from_context_fn == env_callback
 
-      # Verify the session manager was created with the env callback
+      # Verify the session manager was created without the env callback (new architecture)
       mock_session_manager.assert_called_once_with(
           connection_params=mock_stdio_params,
           errlog=toolset._errlog,
-          context_to_env_mapper_callback=env_callback,
       )
 
   @pytest.mark.asyncio
@@ -236,7 +239,7 @@ class TestMCPToolsetEnv:
   ):
     """Test end-to-end environment variable extraction and injection."""
 
-    def env_callback(state: Dict[str, Any]) -> Dict[str, str]:
+    def env_callback(state: Mapping[str, Any]) -> Dict[str, str]:
       return {
           'API_KEY': state.get('api_key', ''),
           'WORKSPACE_PATH': state.get('workspace_path', ''),
@@ -262,16 +265,14 @@ class TestMCPToolsetEnv:
 
       toolset = MCPToolset(
           connection_params=mock_stdio_params,
-          context_to_env_mapper_callback=env_callback,
+          get_env_from_context_fn=env_callback,
       )
 
       # Call get_tools with context containing state
       tools = await toolset.get_tools(mock_readonly_context)
 
-      # Verify the session manager's create_session was called with the context
-      mock_session_manager.create_session.assert_called_once_with(
-          mock_readonly_context
-      )
+      # Verify the session manager's create_session was called without parameters (new architecture)
+      mock_session_manager.create_session.assert_called_once_with()
 
       # Verify list_tools was called on the session
       mock_session.list_tools.assert_called_once()
