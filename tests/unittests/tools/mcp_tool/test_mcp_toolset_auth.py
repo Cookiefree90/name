@@ -437,41 +437,7 @@ class TestMCPToolsetAuth:
       assert "auth_credential" in call_args.kwargs
 
 
-# Mock MCP imports to avoid dependency issues in tests
-@pytest.fixture(autouse=True)
-def mock_mcp_imports():
-  """Mock MCP imports to avoid import errors in testing."""
-  from unittest.mock import MagicMock
-
-  with patch.dict(
-      "sys.modules",
-      {
-          "mcp": MagicMock(),
-          "mcp.types": MagicMock(),
-      },
-  ):
-    # Mock the specific classes we need
-    mock_stdio_params = MagicMock()
-    mock_list_tools_result = MagicMock()
-    mock_tool = MagicMock()
-
-    with (
-        patch(
-            "google.adk.tools.mcp_tool.mcp_toolset.StdioServerParameters",
-            mock_stdio_params,
-        ),
-        patch(
-            "google.adk.tools.mcp_tool.mcp_toolset.ListToolsResult",
-            mock_list_tools_result,
-        ),
-    ):
-      yield
-
-
-# Import after mocking to avoid MCP dependency issues
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
-
-
+# The duplicate fixture definition starting at line 412 has been removed.
 @pytest.fixture
 def mock_auth_scheme():
   """Create a mock AuthScheme for testing."""
