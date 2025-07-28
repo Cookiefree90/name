@@ -165,8 +165,6 @@ class MCPToolset(BaseToolset):
     self._auth_scheme = auth_scheme
     self._auth_credential = auth_credential
 
-    # self._session = None
-
   def _extract_env_from_context(
       self, readonly_context: Optional[ReadonlyContext]
   ) -> Dict[str, str]:
