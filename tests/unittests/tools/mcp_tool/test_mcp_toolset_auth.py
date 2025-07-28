@@ -177,14 +177,15 @@ class TestMCPToolsetAuth:
       mock_auth_credential,
   ):
     """Test successful auth extraction using custom callback."""
+
     def custom_auth_callback(state: Dict[str, Any]):
       if state.get("custom_auth"):
         return mock_auth_scheme, mock_auth_credential
       return None, None
-      
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={"custom_auth": {"type": "bearer"}})
-    
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
@@ -202,11 +203,13 @@ class TestMCPToolsetAuth:
   ):
     """Test fallback to direct state lookup when no callback is provided."""
     context = MagicMock(spec=ReadonlyContext)
-    context.state = MagicMock(return_value={
-        "auth_scheme": mock_auth_scheme,
-        "auth_credential": mock_auth_credential
-    })
-    
+    context.state = MagicMock(
+        return_value={
+            "auth_scheme": mock_auth_scheme,
+            "auth_credential": mock_auth_credential,
+        }
+    )
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
@@ -220,19 +223,22 @@ class TestMCPToolsetAuth:
       mock_connection_params,
   ):
     """Test that callback execution errors are wrapped in AuthExtractionError."""
+
     def failing_callback(state: Dict[str, Any]):
       raise ValueError("Callback failed")
-      
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={})
-    
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
           get_auth_from_context_fn=failing_callback,
       )
-      
-      with pytest.raises(AuthExtractionError, match="Auth extraction callback failed"):
+
+      with pytest.raises(
+          AuthExtractionError, match="Auth extraction callback failed"
+      ):
         toolset._extract_auth_from_context(context)
 
   def test_extract_auth_callback_invalid_return_type(
@@ -240,18 +246,21 @@ class TestMCPToolsetAuth:
       mock_connection_params,
   ):
     """Test that invalid callback return types raise AuthExtractionError."""
-    def invalid_callback(state: Dict[str, Any]) -> Any:  # Use Any to avoid type checker
+
+    def invalid_callback(
+        state: Dict[str, Any],
+    ) -> Any:  # Use Any to avoid type checker
       return "invalid_return"  # Should return tuple
-      
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={})
-    
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
           get_auth_from_context_fn=invalid_callback,  # type: ignore
       )
-      
+
       with pytest.raises(AuthExtractionError, match="must return a tuple"):
         toolset._extract_auth_from_context(context)
 
@@ -260,18 +269,21 @@ class TestMCPToolsetAuth:
       mock_connection_params,
   ):
     """Test that callback returning wrong tuple length raises AuthExtractionError."""
-    def invalid_callback(state: Dict[str, Any]) -> Any:  # Use Any to avoid type checker
+
+    def invalid_callback(
+        state: Dict[str, Any],
+    ) -> Any:  # Use Any to avoid type checker
       return (None,)  # Should return tuple of length 2
-      
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={})
-    
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
           get_auth_from_context_fn=invalid_callback,  # type: ignore
       )
-      
+
       with pytest.raises(AuthExtractionError, match="must return a tuple"):
         toolset._extract_auth_from_context(context)
 
@@ -280,40 +292,54 @@ class TestMCPToolsetAuth:
       mock_connection_params,
   ):
     """Test that invalid auth_scheme type raises AuthExtractionError."""
-    def invalid_callback(state: Dict[str, Any]) -> Any:  # Use Any to avoid type checker
-      return "invalid_auth_scheme", None  # auth_scheme should be AuthScheme or None
-      
+
+    def invalid_callback(
+        state: Dict[str, Any],
+    ) -> Any:  # Use Any to avoid type checker
+      return (
+          "invalid_auth_scheme",
+          None,
+      )  # auth_scheme should be AuthScheme or None
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={})
-    
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
           get_auth_from_context_fn=invalid_callback,  # type: ignore
       )
-      
+
       with pytest.raises(AuthExtractionError, match="invalid auth_scheme type"):
         toolset._extract_auth_from_context(context)
 
   def test_extract_auth_callback_invalid_auth_credential_type(
       self,
-      mock_connection_params,  
+      mock_connection_params,
       mock_auth_scheme,
   ):
     """Test that invalid auth_credential type raises AuthExtractionError."""
-    def invalid_callback(state: Dict[str, Any]) -> Any:  # Use Any to avoid type checker
-      return mock_auth_scheme, "invalid_credential"  # credential should be AuthCredential or None
-      
+
+    def invalid_callback(
+        state: Dict[str, Any],
+    ) -> Any:  # Use Any to avoid type checker
+      return (
+          mock_auth_scheme,
+          "invalid_credential",
+      )  # credential should be AuthCredential or None
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={})
-    
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
           get_auth_from_context_fn=invalid_callback,  # type: ignore
       )
-      
-      with pytest.raises(AuthExtractionError, match="invalid auth_credential type"):
+
+      with pytest.raises(
+          AuthExtractionError, match="invalid auth_credential type"
+      ):
         toolset._extract_auth_from_context(context)
 
   def test_extract_auth_state_extraction_error(
@@ -321,18 +347,19 @@ class TestMCPToolsetAuth:
       mock_connection_params,
   ):
     """Test that state extraction errors are wrapped in AuthExtractionError."""
+
     def valid_callback(state: Dict[str, Any]):
       return None, None
-      
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(side_effect=TypeError("State extraction failed"))
-    
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
           get_auth_from_context_fn=valid_callback,
       )
-      
+
       with pytest.raises(AuthExtractionError, match="Failed to extract state"):
         toolset._extract_auth_from_context(context)
 
@@ -341,18 +368,19 @@ class TestMCPToolsetAuth:
       mock_connection_params,
   ):
     """Test that callback can return None values for auth_scheme and auth_credential."""
+
     def callback_returning_none(state: Dict[str, Any]):
       return None, None
-      
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={})
-    
+
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,
           get_auth_from_context_fn=callback_returning_none,
       )
-      
+
       auth_scheme, auth_credential = toolset._extract_auth_from_context(context)
       assert auth_scheme is None
       assert auth_credential is None
@@ -525,7 +553,6 @@ class TestMCPToolsetAuth:
 
       assert toolset._get_auth_from_context_fn is None
 
-
   def test_extract_auth_fallback_to_init(
       self,
       mock_connection_params,
@@ -543,7 +570,9 @@ class TestMCPToolsetAuth:
       assert auth_scheme == mock_auth_scheme
       assert auth_credential == mock_auth_credential
 
-  def test_extract_auth_no_context_defaults_to_none(self, mock_connection_params):
+  def test_extract_auth_no_context_defaults_to_none(
+      self, mock_connection_params
+  ):
     """Test auth extraction with no context and no init values returns (None, None)."""
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(connection_params=mock_connection_params)
@@ -574,10 +603,12 @@ class TestMCPToolsetAuth:
       mock_auth_credential,
   ):
     """Test auth extraction using custom callback with context.state()."""
+
     def custom_auth_callback(state: Dict[str, Any]):
       if state.get("custom_auth"):
         return mock_auth_scheme, mock_auth_credential
       return None, None
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={"custom_auth": {"type": "bearer"}})
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
@@ -596,8 +627,10 @@ class TestMCPToolsetAuth:
       mock_auth_credential,
   ):
     """Test that callback execution errors raise AuthExtractionError."""
+
     def failing_callback(state: Dict[str, Any]):
       raise ValueError("Callback failed")
+
     context = MagicMock(spec=ReadonlyContext)
     context.state = MagicMock(return_value={})
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
@@ -607,8 +640,10 @@ class TestMCPToolsetAuth:
           auth_scheme=mock_auth_scheme,
           auth_credential=mock_auth_credential,
       )
-      
-      with pytest.raises(AuthExtractionError, match="Auth extraction callback failed"):
+
+      with pytest.raises(
+          AuthExtractionError, match="Auth extraction callback failed"
+      ):
         toolset._extract_auth_from_context(context)
 
   @pytest.mark.asyncio
@@ -723,10 +758,12 @@ class TestMCPToolsetAuth:
   ):
     """Test that invalid types in context state() are ignored and fallback to __init__ values."""
     context = MagicMock(spec=ReadonlyContext)
-    context.state = MagicMock(return_value={
-        "auth_scheme": "invalid_scheme",
-        "auth_credential": {"invalid": "credential"},
-    })
+    context.state = MagicMock(
+        return_value={
+            "auth_scheme": "invalid_scheme",
+            "auth_credential": {"invalid": "credential"},
+        }
+    )
     with patch("google.adk.tools.mcp_tool.mcp_toolset.MCPSessionManager"):
       toolset = MCPToolset(
           connection_params=mock_connection_params,

@@ -121,10 +121,7 @@ class TestMCPToolsetEnv:
           errlog=toolset._errlog,
       )
 
-      assert (
-          toolset._get_env_from_context_fn
-          == sample_get_env_from_context_fn
-      )
+      assert toolset._get_env_from_context_fn == sample_get_env_from_context_fn
 
   def test_init_without_env_callback(self, mock_stdio_params):
     """Test MCPToolset initialization without environment callback."""
@@ -169,7 +166,7 @@ class TestMCPToolsetEnv:
 
       # Verify create_session was called without parameters (new architecture)
       mock_session_manager.create_session.assert_called_once_with()
-      
+
       # Verify that the session manager was updated with new connection params
       # (this happens when environment variables are extracted and injected)
       mock_session_manager.update_connection_params.assert_called_once()
@@ -199,11 +196,9 @@ class TestMCPToolsetEnv:
 
       # Verify create_session was called without parameters (new architecture)
       mock_session_manager.create_session.assert_called_once_with()
-      
+
       # Verify that update_connection_params was NOT called since no context was provided
       mock_session_manager.update_connection_params.assert_not_called()
-
-
 
   def test_both_auth_and_env_callbacks(self, mock_stdio_params):
     """Test MCPToolset initialization with both auth and env callbacks."""

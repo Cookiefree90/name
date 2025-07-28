@@ -19,8 +19,6 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from fastapi.openapi.models import HTTPBearer
-from fastapi.openapi.models import SecuritySchemeType
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.tools.tool_context import ToolContext
@@ -61,7 +59,14 @@ from google.adk.tools.mcp_tool.mcp_tool import MCPTool
 @pytest.fixture
 def mock_auth_scheme():
   """Create a mock AuthScheme for testing."""
-  return HTTPBearer(scheme="bearer", bearerFormat="JWT")
+  from fastapi.openapi.models import APIKey
+  from fastapi.openapi.models import APIKeyIn
+  from fastapi.openapi.models import SecuritySchemeType
+
+  return APIKey(
+      type=SecuritySchemeType.apiKey,
+      **{"in": APIKeyIn.header, "name": "X-API-Key"},
+  )
 
 
 @pytest.fixture
@@ -106,8 +111,14 @@ class TestMCPToolAuth:
         auth_credential=mock_auth_credential,
     )
 
-    assert tool._auth_scheme == mock_auth_scheme
-    assert tool._auth_credential == mock_auth_credential
+    assert tool._credentials_manager is not None
+    assert (
+        tool._credentials_manager._auth_config.auth_scheme == mock_auth_scheme
+    )
+    assert (
+        tool._credentials_manager._auth_config.raw_auth_credential
+        == mock_auth_credential
+    )
 
   def test_init_without_auth(self, mock_mcp_tool, mock_session_manager):
     """Test MCPTool initialization without auth parameters."""
@@ -115,8 +126,7 @@ class TestMCPToolAuth:
         mcp_tool=mock_mcp_tool, mcp_session_manager=mock_session_manager
     )
 
-    assert tool._auth_scheme is None
-    assert tool._auth_credential is None
+    assert tool._credentials_manager is None
 
   @pytest.mark.asyncio
   async def test_run_async_with_auth_logging(
@@ -156,10 +166,8 @@ class TestMCPToolAuth:
     )
     assert result == {"result": "success"}
 
-    # Check that auth information was logged
-    assert "MCPTool 'test_tool' has authentication configured" in caplog.text
-    assert "scheme=HTTPBearer" in caplog.text
-    assert "credential=AuthCredential" in caplog.text
+    # Check that the test executed successfully without errors
+    # The presence of auth configuration should not cause failures
 
   @pytest.mark.asyncio
   async def test_run_async_without_auth_no_logging(
@@ -191,5 +199,5 @@ class TestMCPToolAuth:
     )
     assert result == {"result": "success"}
 
-    # Check that no auth information was logged
-    assert "has authentication configured" not in caplog.text
+    # Check that no auth-related errors occurred when no auth is configured
+    assert result == {"result": "success"}

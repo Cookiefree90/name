@@ -23,8 +23,8 @@ import json
 import logging
 import sys
 from typing import Any
-from typing import Dict
 from typing import Callable
+from typing import Dict
 from typing import Optional
 from typing import TextIO
 from typing import Union
@@ -193,7 +193,7 @@ class MCPSessionManager:
       ],
   ) -> None:
     """Updates the connection parameters and invalidates existing sessions.
-    
+
     Args:
         new_connection_params: New connection parameters to use.
     """
@@ -208,7 +208,7 @@ class MCPSessionManager:
       )
     else:
       self._connection_params = new_connection_params
-    
+
     # Clear existing sessions since connection params changed
     # Sessions will be recreated on next request
     # Note: We don't close sessions here to avoid blocking,

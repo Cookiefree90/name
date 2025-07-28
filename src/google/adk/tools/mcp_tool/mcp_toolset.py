@@ -69,6 +69,7 @@ GetEnvFromContextCallback = Callable[[Mapping[str, Any]], Dict[str, str]]
 
 class AuthExtractionError(Exception):
   """Exception raised when auth extraction from context fails."""
+
   pass
 
 
@@ -136,7 +137,7 @@ class MCPToolset(BaseToolset):
         from ReadonlyContext.state into AuthScheme and AuthCredential. Must
         return a tuple of (AuthScheme, AuthCredential). If None, the toolset
         will use the auth_scheme and auth_credential provided in __init__.
-        If provided, the callback must return valid AuthScheme and 
+        If provided, the callback must return valid AuthScheme and
         AuthCredential objects - None values are not allowed.
       get_env_from_context_fn: Optional callback function to transform session
         state into environment variables for the MCP connection. Takes a
@@ -205,7 +206,9 @@ class MCPToolset(BaseToolset):
     Returns:
         Updated connection params with injected environment variables.
     """
-    if not env_vars or not isinstance(self._connection_params, StdioConnectionParams):
+    if not env_vars or not isinstance(
+        self._connection_params, StdioConnectionParams
+    ):
       return self._connection_params
 
     # Get existing env vars from connection params
@@ -218,6 +221,7 @@ class MCPToolset(BaseToolset):
 
     # Create new server params with merged environment variables
     from mcp import StdioServerParameters
+
     new_server_params = StdioServerParameters(
         command=self._connection_params.server_params.command,
         args=self._connection_params.server_params.args,
@@ -225,12 +229,14 @@ class MCPToolset(BaseToolset):
         cwd=getattr(self._connection_params.server_params, "cwd", None),
         encoding=getattr(
             self._connection_params.server_params, "encoding", None
-        ) or "utf-8",
+        )
+        or "utf-8",
         encoding_error_handler=getattr(
             self._connection_params.server_params,
             "encoding_error_handler",
             None,
-        ) or "strict",
+        )
+        or "strict",
     )
 
     # Create new connection params with updated server params
@@ -249,7 +255,7 @@ class MCPToolset(BaseToolset):
 
     Returns:
         Tuple of (AuthScheme, AuthCredential) or (None, None) if not found.
-        
+
     Raises:
         AuthExtractionError: If callback is provided but returns invalid types
             or if callback execution fails.
@@ -257,11 +263,11 @@ class MCPToolset(BaseToolset):
     # If no context provided, return init values
     if not readonly_context:
       return self._auth_scheme, self._auth_credential
-      
+
     # Get state from readonly context if available
     if hasattr(readonly_context, "state") and readonly_context.state:
       try:
-        # Handle both real ReadonlyContext (state is MappingProxyType) 
+        # Handle both real ReadonlyContext (state is MappingProxyType)
         # and test mocks (state might be a callable returning dict)
         if callable(readonly_context.state):
           state_dict = readonly_context.state()
@@ -286,31 +292,33 @@ class MCPToolset(BaseToolset):
         raise AuthExtractionError(
             f"Auth extraction callback failed: {e}"
         ) from e
-      
+
       # Validate callback return type
       if not isinstance(auth_result, tuple) or len(auth_result) != 2:
         raise AuthExtractionError(
-            f"Auth extraction callback must return a tuple of (AuthScheme, AuthCredential), "
-            f"got {type(auth_result)}"
+            "Auth extraction callback must return a tuple of (AuthScheme,"
+            f" AuthCredential), got {type(auth_result)}"
         )
-      
+
       auth_scheme, auth_credential = auth_result
-      
+
       # Validate that returned values are correct types (allow None)
       if auth_scheme is not None and not isinstance(auth_scheme, AuthScheme):
         raise AuthExtractionError(
-            f"Auth extraction callback returned invalid auth_scheme type: "
+            "Auth extraction callback returned invalid auth_scheme type: "
             f"expected AuthScheme or None, got {type(auth_scheme)}"
         )
-      
-      if auth_credential is not None and not isinstance(auth_credential, AuthCredential):
+
+      if auth_credential is not None and not isinstance(
+          auth_credential, AuthCredential
+      ):
         raise AuthExtractionError(
-            f"Auth extraction callback returned invalid auth_credential type: "
+            "Auth extraction callback returned invalid auth_credential type: "
             f"expected AuthCredential or None, got {type(auth_credential)}"
         )
-      
+
       return auth_scheme, auth_credential
-    
+
     # If no callback, look for auth data directly in state (fallback behavior)
     auth_scheme = state_dict.get("auth_scheme", self._auth_scheme)
     auth_credential = state_dict.get("auth_credential", self._auth_credential)
@@ -344,7 +352,9 @@ class MCPToolset(BaseToolset):
       # Update connection params with environment variables
       updated_connection_params = self._inject_env_vars(env_vars)
       # Update the session manager with new connection params
-      self._mcp_session_manager.update_connection_params(updated_connection_params)
+      self._mcp_session_manager.update_connection_params(
+          updated_connection_params
+      )
 
     # Get session from session manager
     session = await self._mcp_session_manager.create_session()
