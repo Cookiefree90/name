@@ -214,8 +214,6 @@ class MCPSessionManager:
     # Note: We don't close sessions here to avoid blocking,
     # they will be cleaned up when detected as disconnected
 
-    # Lock to prevent race conditions in session creation
-    self._session_lock = asyncio.Lock()
 
   def _generate_session_key(
       self, merged_headers: Optional[Dict[str, str]] = None
