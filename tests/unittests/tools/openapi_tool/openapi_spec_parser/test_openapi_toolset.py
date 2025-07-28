@@ -23,10 +23,17 @@ from fastapi.openapi.models import ParameterInType
 from fastapi.openapi.models import SecuritySchemeType
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
+from google.adk.auth.auth_credential import HttpAuth
+from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.sessions.state import State
 from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_toolset import OpenAPIToolset
 from google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool import RestApiTool
+from google.adk.tools.tool_context import ToolContext
 import pytest
+import requests
 import yaml
+import types
+from unittest.mock import MagicMock
 
 
 def load_spec(file_path: str) -> Dict:
@@ -137,3 +144,20 @@ def test_openapi_toolset_configure_auth_on_init(openapi_spec: Dict):
   for tool in toolset._tools:
     assert tool.auth_scheme == auth_scheme
     assert tool.auth_credential == auth_credential
+
+
+@pytest.mark.parametrize("with_custom_session", [False, True], ids=["default", "custom"])
+def test_openapi_toolset_with_session(openapi_spec: Dict, with_custom_session: bool):
+  """Test providing a requests session during initialization."""
+  # Create a mock session
+  mock_session = MagicMock(spec=requests.Session) if with_custom_session else None
+  
+  # Initialize the toolset with the mock session
+  toolset = OpenAPIToolset(
+      spec_dict=openapi_spec,
+      session=mock_session,
+  )
+  
+  # Verify all tools have the session set correctly
+  for tool in toolset.tools:
+    assert (tool.session == mock_session) == with_custom_session

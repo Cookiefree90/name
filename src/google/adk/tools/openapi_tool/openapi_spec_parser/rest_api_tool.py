@@ -87,6 +87,7 @@ class RestApiTool(BaseTool):
       auth_scheme: Optional[Union[AuthScheme, str]] = None,
       auth_credential: Optional[Union[AuthCredential, str]] = None,
       should_parse_operation=True,
+      session: Optional[requests.Session] = None,
   ):
     """Initializes the RestApiTool with the given parameters.
 
@@ -113,6 +114,8 @@ class RestApiTool(BaseTool):
           (https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.1.0.md#security-scheme-object)
         auth_credential: The authentication credential of the tool.
         should_parse_operation: Whether to parse the operation.
+        session: Optional requests.Session to use for making API calls. If not provided, 
+          a new session will be created.
     """
     # Gemini restrict the length of function name to be less than 64 characters
     self.name = name[:60]
@@ -136,13 +139,15 @@ class RestApiTool(BaseTool):
     self.credential_exchanger = AutoAuthCredentialExchanger()
     if should_parse_operation:
       self._operation_parser = OperationParser(self.operation)
+    self.session = session or requests.Session()
 
   @classmethod
-  def from_parsed_operation(cls, parsed: ParsedOperation) -> "RestApiTool":
+  def from_parsed_operation(cls, parsed: ParsedOperation, session: Optional[requests.Session] = None) -> "RestApiTool":
     """Initializes the RestApiTool from a ParsedOperation object.
 
     Args:
         parsed: A ParsedOperation object.
+        session: An optional requests.Session object.
 
     Returns:
         A RestApiTool object.
@@ -161,24 +166,25 @@ class RestApiTool(BaseTool):
         operation=parsed.operation,
         auth_scheme=parsed.auth_scheme,
         auth_credential=parsed.auth_credential,
+        session=session,
     )
     generated._operation_parser = operation_parser
     return generated
 
   @classmethod
   def from_parsed_operation_str(
-      cls, parsed_operation_str: str
+      cls, parsed_operation_str: str, session: Optional[requests.Session] = None
   ) -> "RestApiTool":
     """Initializes the RestApiTool from a dict.
 
     Args:
         parsed: A dict representation of a ParsedOperation object.
-
+        session: An optional requests.Session object.
     Returns:
         A RestApiTool object.
     """
     operation = ParsedOperation.model_validate_json(parsed_operation_str)
-    return RestApiTool.from_parsed_operation(operation)
+    return RestApiTool.from_parsed_operation(operation, session)
 
   @override
   def _get_declaration(self) -> FunctionDeclaration:
@@ -388,7 +394,7 @@ class RestApiTool(BaseTool):
 
     # Got all parameters. Call the API.
     request_params = self._prepare_request_params(api_params, api_args)
-    response = requests.request(**request_params)
+    response = self.session.request(**request_params)
 
     # Parse API response
     try:

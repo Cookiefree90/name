@@ -62,6 +62,15 @@ class TestRestApiTool:
     return mock_parser
 
   @pytest.fixture
+  def mock_session(self):
+    """Fixture for a mock session."""
+    mock_session = MagicMock()
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"result": "mock_session"}
+    mock_session.request.return_value = mock_response
+    return mock_session
+
+  @pytest.fixture
   def sample_endpoint(self):
     return OperationEndpoint(
         base_url="https://example.com", path="/test", method="GET"
@@ -153,12 +162,15 @@ class TestRestApiTool:
     assert tool.auth_scheme == sample_auth_scheme
     assert tool.credential_exchanger is not None
 
+  @pytest.mark.parametrize("with_custom_session", [False, True], ids=["default", "custom"])
   def test_from_parsed_operation_str(
       self,
       sample_endpoint,
       sample_api_parameters,
       sample_return_parameter,
       sample_operation,
+      mock_session,
+      with_custom_session
   ):
     parsed_operation_str = json.dumps({
         "name": "test_operation",
@@ -171,8 +183,12 @@ class TestRestApiTool:
         "return_value": sample_return_parameter.model_dump(),
     })
 
-    tool = RestApiTool.from_parsed_operation_str(parsed_operation_str)
+    test_session = mock_session if with_custom_session else None
+
+    tool = RestApiTool.from_parsed_operation_str(parsed_operation_str, session=test_session)
+    
     assert tool.name == "test_operation"
+    assert (tool.session == test_session) == with_custom_session
 
   def test_get_declaration(
       self, sample_endpoint, sample_operation, mock_operation_parser
@@ -778,6 +794,63 @@ class TestRestApiTool:
 
     assert "param_name" in request_params["params"]
     assert "empty_param" not in request_params["params"]
+
+  def test_custom_session_is_used(
+      self,
+      sample_endpoint,
+      sample_operation,
+      sample_auth_scheme,
+      sample_auth_credential,
+      mock_tool_context,
+  ):
+      # Create a mock session with a mock request method
+      mock_session = MagicMock()
+      mock_response = MagicMock()
+      mock_response.json.return_value = {"result": "custom_session"}
+      mock_session.request.return_value = mock_response
+
+      tool = RestApiTool(
+          name="test_tool",
+          description="Test Tool",
+          endpoint=sample_endpoint,
+          operation=sample_operation,
+          auth_scheme=sample_auth_scheme,
+          auth_credential=sample_auth_credential,
+          session=mock_session,
+      )
+
+      result = tool.call(args={}, tool_context=mock_tool_context)
+      assert result == {"result": "custom_session"}
+      mock_session.request.assert_called_once()
+
+  @pytest.mark.parametrize("with_custom_session", [False, True], ids=["default", "custom"])
+  def test_from_parsed_operation_with_custom_session(
+      self,
+      sample_endpoint,
+      sample_operation,
+      sample_api_parameters,
+      sample_return_parameter,
+      sample_auth_scheme,
+      sample_auth_credential,
+      mock_tool_context,
+      mock_session,
+      with_custom_session
+  ):
+      # Create ParsedOperation instance
+      parsed_operation = MagicMock()
+      parsed_operation.endpoint = sample_endpoint
+      parsed_operation.operation = sample_operation
+      parsed_operation.parameters = sample_api_parameters
+      parsed_operation.return_value = sample_return_parameter
+      parsed_operation.auth_scheme = sample_auth_scheme
+      parsed_operation.auth_credential = sample_auth_credential
+
+      test_session = mock_session if with_custom_session else None
+      
+      tool = RestApiTool.from_parsed_operation(parsed_operation, session=test_session)
+
+      assert tool.name == "test_operation"
+      assert (tool.session == test_session) == with_custom_session
 
 
 def test_snake_to_lower_camel():
