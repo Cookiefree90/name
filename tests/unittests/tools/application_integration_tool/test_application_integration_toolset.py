@@ -328,7 +328,7 @@ async def test_initialization_with_connection_and_entity_operations(
   assert isinstance(tools[0], IntegrationConnectorTool)
   assert tools[0]._entity == "Issues"
   assert tools[0]._operation == "LIST_ENTITIES"
-  assert (toolset.generated_tools['list_issues'].rest_api_tool.session == mock_session) == with_custom_session
+  assert (tools[0]._rest_api_tool.session == mock_session) == with_custom_session
 
 
 @pytest.mark.asyncio
