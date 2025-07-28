@@ -23,10 +23,7 @@ import json
 import logging
 import sys
 from typing import Any
-<<<<<<< HEAD
 from typing import Callable
-=======
->>>>>>> f1889ae440386668bee9283527db6d0631e35aa3
 from typing import Dict
 from typing import Optional
 from typing import TextIO
