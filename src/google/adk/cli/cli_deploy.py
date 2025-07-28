@@ -253,8 +253,8 @@ def to_agent_engine(
     temp_folder: str,
     adk_app: str,
     staging_bucket: str,
-    agent_engine_name: str,
     trace_to_cloud: bool,
+    agent_engine_id: Optional[str] = None,
     absolutize_imports: bool = True,
     project: Optional[str] = None,
     region: Optional[str] = None,
@@ -294,9 +294,9 @@ def to_agent_engine(
     project (str): Google Cloud project id.
     region (str): Google Cloud region.
     staging_bucket (str): The GCS bucket for staging the deployment artifacts.
-    agent_engine_name (str): The name of the Agent Engine instance to update if
-      it exists. Format: `projects/{project}/locations/{location}/reasoningEngines/{resource_id}`.
     trace_to_cloud (bool): Whether to enable Cloud Trace.
+    agent_engine_id (str): The ID of the Agent Engine instance to update. If not
+      specified, a new Agent Engine instance will be created.
     absolutize_imports (bool): Whether to absolutize imports. If True, all relative
       imports will be converted to absolute import statements. Default is True.
     requirements_file (str): The filepath to the `requirements.txt` file to use.
@@ -315,8 +315,15 @@ def to_agent_engine(
     shutil.rmtree(agent_src_path)
 
   try:
+    ignore_patterns = None
+    ae_ignore_path = os.path.join(agent_folder, '.ae_ignore')
+    if os.path.exists(ae_ignore_path):
+      click.echo(f'Ignoring files matching the patterns in {ae_ignore_path}')
+      with open(ae_ignore_path, 'r') as f:
+        patterns = [pattern.strip() for pattern in f.readlines()]
+        ignore_patterns = shutil.ignore_patterns(*patterns)
     click.echo('Copying agent source code...')
-    shutil.copytree(agent_folder, agent_src_path)
+    shutil.copytree(agent_folder, agent_src_path, ignore=ignore_patterns)
     click.echo('Copying agent source code complete.')
 
     click.echo('Initializing Vertex AI...')
@@ -341,7 +348,7 @@ def to_agent_engine(
     env_vars = None
     if not env_file:
       # Attempt to read the env variables from .env in the dir (if any).
-      env_file = os.path.join(agent_src_path, '.env')
+      env_file = os.path.join(agent_folder, '.env')
     if os.path.exists(env_file):
       from dotenv import dotenv_values
 
@@ -407,7 +414,7 @@ def to_agent_engine(
 
     click.echo('Deploying to agent engine...')
     agent_engine = agent_engines.ModuleAgent(
-        module_name='agent_engine_app',
+        module_name=adk_app,
         agent_name='adk_app',
         register_operations={
             '': [
@@ -425,7 +432,7 @@ def to_agent_engine(
             'async_stream': ['async_stream_query'],
             'stream': ['stream_query', 'streaming_agent_run_with_events'],
         },
-        sys_paths=[temp_folder],
+        sys_paths=[temp_folder[1:]],
     )
     agent_config = dict(
         agent_engine=agent_engine,
@@ -436,10 +443,11 @@ def to_agent_engine(
         extra_packages=[temp_folder],
     )
 
-    if not agent_engine_name:
+    if not agent_engine_id:
       agent_engines.create(**agent_config)
     else:
-      agent_engines.update(resource_name=agent_engine_name, **agent_config)
+      name = f'projects/{project}/locations/{region}/reasoningEngines/{agent_engine_id}'
+      agent_engines.update(resource_name=name, **agent_config)
   finally:
     click.echo(f'Cleaning up the temp folder: {temp_folder}')
     shutil.rmtree(temp_folder)
