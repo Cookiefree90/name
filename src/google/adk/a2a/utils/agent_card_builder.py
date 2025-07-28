@@ -224,7 +224,7 @@ def _build_code_executor_skill(agent: LlmAgent) -> AgentSkill:
   return AgentSkill(
       id=f'{agent.name}-code-executor',
       name='code-execution',
-      description='Can execute codes',
+      description='Can execute code',
       examples=None,
       input_modes=None,
       output_modes=None,
@@ -359,15 +359,46 @@ def _build_llm_agent_description_with_instructions(agent: LlmAgent) -> str:
 
 
 def _replace_pronouns(text: str) -> str:
-  """Replace pronouns in text for agent description (you -> I, your -> my, etc.)."""
-  pronoun_map = {'you': 'I', 'your': 'my', 'yours': 'mine'}
+  """
+  Replace pronouns and conjugate common verbs for agent description.
+  (e.g., "You are" -> "I am", "your" -> "my").
+  """
+  # --- Stage 1: Handle specific phrases with verb conjugations ---
+  phrase_map = {
+      'you are': 'I am',
+      'you were': 'I was',
+      "you're": 'I am',
+      "you've": 'I have',
+  }
 
-  return re.sub(
-      r'\b(you|your|yours)\b',
+  phrase_pattern = r'\b(' + '|'.join(phrase_map.keys()) + r')\b'
+
+  text = re.sub(
+      phrase_pattern,
+      lambda match: phrase_map[match.group(1).lower()],
+      text,
+      flags=re.IGNORECASE,
+  )
+
+  # --- Stage 2: Handle remaining, standalone pronouns ---
+  # This runs on the already-modified text to catch any remaining pronouns.
+  pronoun_map = {
+      'you': 'I',
+      'your': 'my',
+      'yours': 'mine',
+      'yourself': 'myself',
+  }
+
+  pronoun_pattern = r'\b(' + '|'.join(pronoun_map.keys()) + r')\b'
+
+  text = re.sub(
+      pronoun_pattern,
       lambda match: pronoun_map[match.group(1).lower()],
       text,
       flags=re.IGNORECASE,
   )
+
+  return text
 
 
 def _get_workflow_description(agent: BaseAgent) -> Optional[str]:
