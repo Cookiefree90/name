@@ -359,8 +359,7 @@ def _build_llm_agent_description_with_instructions(agent: LlmAgent) -> str:
 
 
 def _replace_pronouns(text: str) -> str:
-  """
-  Replace pronouns and conjugate common verbs for agent description.
+  """Replace pronouns and conjugate common verbs for agent description.
   (e.g., "You are" -> "I am", "your" -> "my").
   """
   replacement_map = {
