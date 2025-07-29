@@ -1,11 +1,11 @@
 from typing import Literal
 
 from google.adk.agents.agent_config import AgentConfig
-from google.adk.agents.agent_config import LlmAgentConfig
-from google.adk.agents.agent_config import LoopAgentConfig
-from google.adk.agents.agent_config import ParallelAgentConfig
-from google.adk.agents.agent_config import SequentialAgentConfig
 from google.adk.agents.base_agent_config import BaseAgentConfig
+from google.adk.agents.llm_agent_config import LlmAgentConfig
+from google.adk.agents.loop_agent_config import LoopAgentConfig
+from google.adk.agents.parallel_agent_config import ParallelAgentConfig
+from google.adk.agents.sequential_agent_config import SequentialAgentConfig
 import yaml
 
 
@@ -50,9 +50,9 @@ agent_class: LoopAgent
 name: CodePipelineAgent
 description: Executes a sequence of code writing, reviewing, and refactoring.
 sub_agents:
-  - config: sub_agents/code_writer_agent.yaml
-  - config: sub_agents/code_reviewer_agent.yaml
-  - config: sub_agents/code_refactorer_agent.yaml
+  - config_path: sub_agents/code_writer_agent.yaml
+  - config_path: sub_agents/code_reviewer_agent.yaml
+  - config_path: sub_agents/code_refactorer_agent.yaml
 """
   config_data = yaml.safe_load(yaml_content)
 
@@ -68,9 +68,9 @@ agent_class: ParallelAgent
 name: CodePipelineAgent
 description: Executes a sequence of code writing, reviewing, and refactoring.
 sub_agents:
-  - config: sub_agents/code_writer_agent.yaml
-  - config: sub_agents/code_reviewer_agent.yaml
-  - config: sub_agents/code_refactorer_agent.yaml
+  - config_path: sub_agents/code_writer_agent.yaml
+  - config_path: sub_agents/code_reviewer_agent.yaml
+  - config_path: sub_agents/code_refactorer_agent.yaml
 """
   config_data = yaml.safe_load(yaml_content)
 
@@ -86,9 +86,9 @@ agent_class: SequentialAgent
 name: CodePipelineAgent
 description: Executes a sequence of code writing, reviewing, and refactoring.
 sub_agents:
-  - config: sub_agents/code_writer_agent.yaml
-  - config: sub_agents/code_reviewer_agent.yaml
-  - config: sub_agents/code_refactorer_agent.yaml
+  - config_path: sub_agents/code_writer_agent.yaml
+  - config_path: sub_agents/code_reviewer_agent.yaml
+  - config_path: sub_agents/code_refactorer_agent.yaml
 """
   config_data = yaml.safe_load(yaml_content)
 

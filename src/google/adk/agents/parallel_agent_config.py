@@ -11,3 +11,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+"""Parallel agent implementation."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import ConfigDict
+
+from ..utils.feature_decorator import working_in_progress
+from .base_agent_config import BaseAgentConfig
+
+
+@working_in_progress('ParallelAgentConfig is not ready for use.')
+class ParallelAgentConfig(BaseAgentConfig):
+  """The config for the YAML schema of a ParallelAgent."""
+
+  model_config = ConfigDict(
+      extra='forbid',
+  )
+
+  agent_class: Literal['ParallelAgent'] = 'ParallelAgent'
