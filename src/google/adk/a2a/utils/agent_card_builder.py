@@ -362,7 +362,7 @@ def _replace_pronouns(text: str) -> str:
   """Replace pronouns and conjugate common verbs for agent description.
   (e.g., "You are" -> "I am", "your" -> "my").
   """
-  replacement_map = {
+  pronoun_map = {
       # Longer phrases with verb conjugations
       'you are': 'I am',
       'you were': 'I was',
@@ -376,13 +376,13 @@ def _replace_pronouns(text: str) -> str:
 
   # Sort keys by length (descending) to ensure longer phrases are matched first.
   # This prevents "you" in "you are" from being replaced on its own.
-  sorted_keys = sorted(replacement_map.keys(), key=len, reverse=True)
+  sorted_keys = sorted(pronoun_map.keys(), key=len, reverse=True)
 
   pattern = r'\b(' + '|'.join(re.escape(key) for key in sorted_keys) + r')\b'
 
   return re.sub(
       pattern,
-      lambda match: replacement_map[match.group(1).lower()],
+      lambda match: pronoun_map[match.group(1).lower()],
       text,
       flags=re.IGNORECASE,
   )
