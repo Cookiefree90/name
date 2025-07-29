@@ -44,6 +44,7 @@ def get_session_service(
     'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
 )
 async def test_get_empty_session(service_type):
+  """Test getting an empty session."""
   session_service = get_session_service(service_type)
   assert not await session_service.get_session(
       app_name='my_app', user_id='test_user', session_id='123'
@@ -55,6 +56,7 @@ async def test_get_empty_session(service_type):
     'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
 )
 async def test_create_get_session(service_type):
+  """Test creating and getting a session."""
   session_service = get_session_service(service_type)
   app_name = 'my_app'
   user_id = 'test_user'
@@ -99,6 +101,7 @@ async def test_create_get_session(service_type):
     'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
 )
 async def test_create_and_list_sessions(service_type):
+  """Test creating and listing sessions."""
   session_service = get_session_service(service_type)
   app_name = 'my_app'
   user_id = 'test_user'
@@ -122,6 +125,7 @@ async def test_create_and_list_sessions(service_type):
     'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
 )
 async def test_session_state(service_type):
+  """Test session state."""
   session_service = get_session_service(service_type)
   app_name = 'my_app'
   user_id_1 = 'user1'
@@ -214,6 +218,7 @@ async def test_session_state(service_type):
     'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
 )
 async def test_create_new_session_will_merge_states(service_type):
+  """Test creating a new session will merge states."""
   session_service = get_session_service(service_type)
   app_name = 'my_app'
   user_id = 'user'
@@ -260,6 +265,7 @@ async def test_create_new_session_will_merge_states(service_type):
     'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
 )
 async def test_append_event_bytes(service_type):
+  """Test appending an event with bytes."""
   session_service = get_session_service(service_type)
   app_name = 'my_app'
   user_id = 'user'
@@ -301,6 +307,7 @@ async def test_append_event_bytes(service_type):
     'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
 )
 async def test_append_event_complete(service_type):
+  """Test appending an event with complete."""
   session_service = get_session_service(service_type)
   app_name = 'my_app'
   user_id = 'user'
@@ -341,6 +348,7 @@ async def test_append_event_complete(service_type):
     'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
 )
 async def test_get_session_with_config(service_type):
+  """Test getting a session with config."""
   session_service = get_session_service(service_type)
   app_name = 'my_app'
   user_id = 'user'
