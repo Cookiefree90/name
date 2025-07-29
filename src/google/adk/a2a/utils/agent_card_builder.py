@@ -386,7 +386,6 @@ def _replace_pronouns(text: str) -> str:
       'you': 'I',
       'your': 'my',
       'yours': 'mine',
-      'yourself': 'myself',
   }
 
   pronoun_pattern = r'\b(' + '|'.join(pronoun_map.keys()) + r')\b'
