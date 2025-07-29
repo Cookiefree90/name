@@ -363,41 +363,30 @@ def _replace_pronouns(text: str) -> str:
   Replace pronouns and conjugate common verbs for agent description.
   (e.g., "You are" -> "I am", "your" -> "my").
   """
-  # --- Stage 1: Handle specific phrases with verb conjugations ---
-  phrase_map = {
+  replacement_map = {
+      # Longer phrases with verb conjugations
       'you are': 'I am',
       'you were': 'I was',
       "you're": 'I am',
       "you've": 'I have',
-  }
-
-  phrase_pattern = r'\b(' + '|'.join(phrase_map.keys()) + r')\b'
-
-  text = re.sub(
-      phrase_pattern,
-      lambda match: phrase_map[match.group(1).lower()],
-      text,
-      flags=re.IGNORECASE,
-  )
-
-  # --- Stage 2: Handle remaining, standalone pronouns ---
-  # This runs on the already-modified text to catch any remaining pronouns.
-  pronoun_map = {
-      'you': 'I',
-      'your': 'my',
+      # Standalone pronouns
       'yours': 'mine',
+      'your': 'my',
+      'you': 'I',
   }
 
-  pronoun_pattern = r'\b(' + '|'.join(pronoun_map.keys()) + r')\b'
+  # Sort keys by length (descending) to ensure longer phrases are matched first.
+  # This prevents "you" in "you are" from being replaced on its own.
+  sorted_keys = sorted(replacement_map.keys(), key=len, reverse=True)
 
-  text = re.sub(
-      pronoun_pattern,
-      lambda match: pronoun_map[match.group(1).lower()],
+  pattern = r'\b(' + '|'.join(re.escape(key) for key in sorted_keys) + r')\b'
+
+  return re.sub(
+      pattern,
+      lambda match: replacement_map[match.group(1).lower()],
       text,
       flags=re.IGNORECASE,
   )
-
-  return text
 
 
 def _get_workflow_description(agent: BaseAgent) -> Optional[str]:
