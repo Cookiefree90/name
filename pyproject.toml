@@ -45,6 +45,7 @@ dependencies = [
   "pydantic>=2.0, <3.0.0",                          # For data validation/models
   "python-dateutil>=2.9.0.post0",                   # For Vertext AI Session Service
   "python-dotenv>=1.0.0",                           # To manage environment variables
+  "redis>=6.0.0",                                   # For RedisToolset
   "requests>=2.32.4",
   "sqlalchemy>=2.0",                                # SQL database ORM
   "starlette>=0.46.2",                              # For FastAPI CLI
@@ -81,7 +82,7 @@ dev = [
 
 a2a = [
   # go/keep-sorted start
-  "a2a-sdk>=0.2.16;python_version>='3.10'"
+  "a2a-sdk>=0.2.16;python_version>='3.10'",
   # go/keep-sorted end
 ]
 
@@ -96,7 +97,7 @@ eval = [
 
 test = [
   # go/keep-sorted start
-  "anthropic>=0.43.0",               # For anthropic model tests
+  "anthropic>=0.43.0",           # For anthropic model tests
   "langchain-community>=0.3.17",
   # langgraph 0.5 removed langgraph.graph.graph which we depend on
   "langgraph>=0.2.60, <= 0.4.10",    # For LangGraphAgent
