@@ -15,25 +15,20 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import AsyncExitStack
-from datetime import timedelta
 import functools
 import hashlib
 import json
 import logging
 import sys
-from typing import Any
-from typing import Dict
-from typing import Optional
-from typing import TextIO
-from typing import Union
+from contextlib import AsyncExitStack
+from datetime import timedelta
+from typing import Any, Dict, Optional, TextIO, Union
 
 import anyio
 from pydantic import BaseModel
 
 try:
-  from mcp import ClientSession
-  from mcp import StdioServerParameters
+  from mcp import ClientSession, StdioServerParameters
   from mcp.client.sse import sse_client
   from mcp.client.stdio import stdio_client
   from mcp.client.streamable_http import streamablehttp_client
@@ -99,6 +94,7 @@ class StreamableHTTPConnectionParams(BaseModel):
         Streamable HTTP server.
       terminate_on_close: Whether to terminate the MCP Streamable HTTP server
         when the connection is closed.
+      auto_initialize: Whether to automatically initialize the session
   """
 
   url: str
@@ -106,6 +102,7 @@ class StreamableHTTPConnectionParams(BaseModel):
   timeout: float = 5.0
   sse_read_timeout: float = 60 * 5.0
   terminate_on_close: bool = True
+  auto_initialize: bool = True
 
 
 def retry_on_closed_resource(func):
@@ -359,7 +356,13 @@ class MCPSessionManager:
           session = await exit_stack.enter_async_context(
               ClientSession(*transports[:2])
           )
-        await session.initialize()
+
+        initialize = True
+        if isinstance(self._connection_params, StreamableHTTPConnectionParams):
+          # Streamable HTTP connections can skip auto-initialization
+          initialize = self._connection_params.auto_initialize
+        if initialize:
+          await session.initialize()
 
         # Store session and exit stack in the pool
         self._sessions[session_key] = (session, exit_stack)
