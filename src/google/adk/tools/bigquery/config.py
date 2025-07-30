@@ -54,3 +54,10 @@ class BigQueryToolConfig(BaseModel):
   By default, the tool will allow only read operations. This behaviour may
   change in future versions.
   """
+
+  max_downloaded_rows: int = 50
+  """Maximum number of rows to download from query results.
+
+  By default, limits query results to 50 rows to prevent excessive memory usage.
+  Set to a higher value if you need more rows returned.
+  """
