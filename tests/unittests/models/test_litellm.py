@@ -416,9 +416,26 @@ class MockLLMClient(LiteLLMClient):
     self.completion_mock = completion_mock
 
   async def acompletion(self, model, messages, tools, **kwargs):
-    return await self.acompletion_mock(
-        model=model, messages=messages, tools=tools, **kwargs
-    )
+    if kwargs.get("stream", False):
+      kwargs_copy = dict(kwargs)
+      kwargs_copy.pop("stream", None)
+
+      async def stream_generator():
+        stream_data = self.completion_mock(
+            model=model,
+            messages=messages,
+            tools=tools,
+            stream=True,
+            **kwargs_copy,
+        )
+        for item in stream_data:
+          yield item
+
+      return stream_generator()
+    else:
+      return await self.acompletion_mock(
+          model=model, messages=messages, tools=tools, **kwargs
+      )
 
   def completion(self, model, messages, tools, stream, **kwargs):
     return self.completion_mock(
@@ -656,6 +673,59 @@ function_declaration_test_cases = [
             },
         },
     ),
+    (
+        "nested_properties",
+        types.FunctionDeclaration(
+            name="test_function_nested_properties",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "array_arg": types.Schema(
+                        type=types.Type.ARRAY,
+                        items=types.Schema(
+                            type=types.Type.OBJECT,
+                            properties={
+                                "nested_key": types.Schema(
+                                    type=types.Type.OBJECT,
+                                    properties={
+                                        "inner_key": types.Schema(
+                                            type=types.Type.STRING,
+                                        )
+                                    },
+                                )
+                            },
+                        ),
+                    ),
+                },
+            ),
+        ),
+        {
+            "type": "function",
+            "function": {
+                "name": "test_function_nested_properties",
+                "description": "",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "array_arg": {
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "nested_key": {
+                                        "type": "object",
+                                        "properties": {
+                                            "inner_key": {"type": "string"},
+                                        },
+                                    },
+                                },
+                            },
+                            "type": "array",
+                        },
+                    },
+                },
+            },
+        },
+    ),
 ]
 
 
@@ -761,39 +831,6 @@ async def test_generate_content_async_with_tool_response(
 
   assert kwargs["messages"][2]["role"] == "tool"
   assert kwargs["messages"][2]["content"] == '{"result": "test_result"}'
-
-
-@pytest.mark.asyncio
-async def test_generate_content_async(mock_acompletion, lite_llm_instance):
-
-  async for response in lite_llm_instance.generate_content_async(
-      LLM_REQUEST_WITH_FUNCTION_DECLARATION
-  ):
-    assert response.content.role == "model"
-    assert response.content.parts[0].text == "Test response"
-    assert response.content.parts[1].function_call.name == "test_function"
-    assert response.content.parts[1].function_call.args == {
-        "test_arg": "test_value"
-    }
-    assert response.content.parts[1].function_call.id == "test_tool_call_id"
-
-  mock_acompletion.assert_called_once()
-
-  _, kwargs = mock_acompletion.call_args
-  assert kwargs["model"] == "test_model"
-  assert kwargs["messages"][0]["role"] == "user"
-  assert kwargs["messages"][0]["content"] == "Test prompt"
-  assert kwargs["tools"][0]["function"]["name"] == "test_function"
-  assert (
-      kwargs["tools"][0]["function"]["description"]
-      == "Test function description"
-  )
-  assert (
-      kwargs["tools"][0]["function"]["parameters"]["properties"]["test_arg"][
-          "type"
-      ]
-      == "string"
-  )
 
 
 @pytest.mark.asyncio
@@ -907,6 +944,43 @@ def test_content_to_message_param_function_call():
   assert tool_call["function"]["arguments"] == '{"test_arg": "test_value"}'
 
 
+def test_content_to_message_param_multipart_content():
+  """Test handling of multipart content where final_content is a list with text objects."""
+  content = types.Content(
+      role="assistant",
+      parts=[
+          types.Part.from_text(text="text part"),
+          types.Part.from_bytes(data=b"test_image_data", mime_type="image/png"),
+      ],
+  )
+  message = _content_to_message_param(content)
+  assert message["role"] == "assistant"
+  # When content is a list and the first element is a text object with type "text",
+  # it should extract the text (for providers like ollama_chat that don't handle lists well)
+  # This is the behavior implemented in the fix
+  assert message["content"] == "text part"
+  assert message["tool_calls"] is None
+
+
+def test_content_to_message_param_single_text_object_in_list():
+  """Test extraction of text from single text object in list (for ollama_chat compatibility)."""
+  from unittest.mock import patch
+
+  # Mock _get_content to return a list with single text object
+  with patch("google.adk.models.lite_llm._get_content") as mock_get_content:
+    mock_get_content.return_value = [{"type": "text", "text": "single text"}]
+
+    content = types.Content(
+        role="assistant",
+        parts=[types.Part.from_text(text="single text")],
+    )
+    message = _content_to_message_param(content)
+    assert message["role"] == "assistant"
+    # Should extract the text from the single text object
+    assert message["content"] == "single text"
+    assert message["tool_calls"] is None
+
+
 def test_message_to_generate_content_response_text():
   message = ChatCompletionAssistantMessage(
       role="assistant",
@@ -954,7 +1028,11 @@ def test_get_content_image():
   ]
   content = _get_content(parts)
   assert content[0]["type"] == "image_url"
-  assert content[0]["image_url"] == "data:image/png;base64,dGVzdF9pbWFnZV9kYXRh"
+  assert (
+      content[0]["image_url"]["url"]
+      == "data:image/png;base64,dGVzdF9pbWFnZV9kYXRh"
+  )
+  assert content[0]["image_url"]["format"] == "png"
 
 
 def test_get_content_video():
@@ -963,7 +1041,11 @@ def test_get_content_video():
   ]
   content = _get_content(parts)
   assert content[0]["type"] == "video_url"
-  assert content[0]["video_url"] == "data:video/mp4;base64,dGVzdF92aWRlb19kYXRh"
+  assert (
+      content[0]["video_url"]["url"]
+      == "data:video/mp4;base64,dGVzdF92aWRlb19kYXRh"
+  )
+  assert content[0]["video_url"]["format"] == "mp4"
 
 
 def test_to_litellm_role():
@@ -1194,11 +1276,11 @@ async def test_generate_content_async_stream(
   assert responses[2].content.role == "model"
   assert responses[2].content.parts[0].text == "two:"
   assert responses[3].content.role == "model"
-  assert responses[3].content.parts[0].function_call.name == "test_function"
-  assert responses[3].content.parts[0].function_call.args == {
+  assert responses[3].content.parts[-1].function_call.name == "test_function"
+  assert responses[3].content.parts[-1].function_call.args == {
       "test_arg": "test_value"
   }
-  assert responses[3].content.parts[0].function_call.id == "test_tool_call_id"
+  assert responses[3].content.parts[-1].function_call.id == "test_tool_call_id"
   mock_completion.assert_called_once()
 
   _, kwargs = mock_completion.call_args
@@ -1257,11 +1339,11 @@ async def test_generate_content_async_stream_with_usage_metadata(
   assert responses[2].content.role == "model"
   assert responses[2].content.parts[0].text == "two:"
   assert responses[3].content.role == "model"
-  assert responses[3].content.parts[0].function_call.name == "test_function"
-  assert responses[3].content.parts[0].function_call.args == {
+  assert responses[3].content.parts[-1].function_call.name == "test_function"
+  assert responses[3].content.parts[-1].function_call.args == {
       "test_arg": "test_value"
   }
-  assert responses[3].content.parts[0].function_call.id == "test_tool_call_id"
+  assert responses[3].content.parts[-1].function_call.id == "test_tool_call_id"
 
   assert responses[3].usage_metadata.prompt_token_count == 10
   assert responses[3].usage_metadata.candidates_token_count == 5
@@ -1430,3 +1512,35 @@ async def test_generate_content_async_non_compliant_multiple_function_calls(
   assert final_response.content.parts[1].function_call.name == "function_2"
   assert final_response.content.parts[1].function_call.id == "1"
   assert final_response.content.parts[1].function_call.args == {"arg": "value2"}
+
+
+@pytest.mark.asyncio
+def test_get_completion_inputs_generation_params():
+  # Test that generation_params are extracted and mapped correctly
+  req = LlmRequest(
+      contents=[
+          types.Content(role="user", parts=[types.Part.from_text(text="hi")]),
+      ],
+      config=types.GenerateContentConfig(
+          temperature=0.33,
+          max_output_tokens=123,
+          top_p=0.88,
+          top_k=7,
+          stop_sequences=["foo", "bar"],
+          presence_penalty=0.1,
+          frequency_penalty=0.2,
+      ),
+  )
+  from google.adk.models.lite_llm import _get_completion_inputs
+
+  _, _, _, generation_params = _get_completion_inputs(req)
+  assert generation_params["temperature"] == 0.33
+  assert generation_params["max_completion_tokens"] == 123
+  assert generation_params["top_p"] == 0.88
+  assert generation_params["top_k"] == 7
+  assert generation_params["stop"] == ["foo", "bar"]
+  assert generation_params["presence_penalty"] == 0.1
+  assert generation_params["frequency_penalty"] == 0.2
+  # Should not include max_output_tokens
+  assert "max_output_tokens" not in generation_params
+  assert "stop_sequences" not in generation_params

@@ -22,7 +22,7 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
-from google.adk.sessions import InMemorySessionService
+from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.telemetry import trace_call_llm
 from google.adk.telemetry import trace_merged_tool_calls
 from google.adk.telemetry import trace_tool_call
@@ -139,6 +139,38 @@ async def test_trace_call_llm_function_response_includes_part_from_bytes(
   ), "Attribute 'gcp.vertex.agent.llm_request' was not set on the span."
 
   assert llm_request_json_str.count('<not serializable>') == 2
+
+
+@pytest.mark.asyncio
+async def test_trace_call_llm_usage_metadata(monkeypatch, mock_span_fixture):
+  monkeypatch.setattr(
+      'opentelemetry.trace.get_current_span', lambda: mock_span_fixture
+  )
+
+  agent = LlmAgent(name='test_agent')
+  invocation_context = await _create_invocation_context(agent)
+  llm_request = LlmRequest(
+      config=types.GenerateContentConfig(system_instruction=''),
+  )
+  llm_response = LlmResponse(
+      turn_complete=True,
+      usage_metadata=types.GenerateContentResponseUsageMetadata(
+          total_token_count=100,
+          prompt_token_count=50,
+          candidates_token_count=50,
+      ),
+  )
+  trace_call_llm(invocation_context, 'test_event_id', llm_request, llm_response)
+
+  expected_calls = [
+      mock.call('gen_ai.system', 'gcp.vertex.agent'),
+      mock.call('gen_ai.usage.input_tokens', 50),
+      mock.call('gen_ai.usage.output_tokens', 50),
+  ]
+  assert mock_span_fixture.set_attribute.call_count == 9
+  mock_span_fixture.set_attribute.assert_has_calls(
+      expected_calls, any_order=True
+  )
 
 
 def test_trace_tool_call_with_scalar_response(
