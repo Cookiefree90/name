@@ -52,6 +52,9 @@ class LlmAgentConfig(BaseAgentConfig):
   disallow_transfer_to_peers: Optional[bool] = None
   """Optional. LlmAgent.disallow_transfer_to_peers."""
 
+  fallback_to_parent: Optional[bool] = None
+  """Optional. LlmAgent.fallback_to_parent."""
+
   input_schema: Optional[CodeConfig] = None
   """Optional. LlmAgent.input_schema."""
 
