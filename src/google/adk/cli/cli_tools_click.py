@@ -25,18 +25,17 @@ import tempfile
 from typing import Optional
 
 import click
+from click.core import ParameterSource
 from fastapi import FastAPI
 import uvicorn
 
 from . import cli_create
 from . import cli_deploy
 from .. import version
-from ..evaluation.gcs_eval_set_results_manager import GcsEvalSetResultsManager
-from ..evaluation.gcs_eval_sets_manager import GcsEvalSetsManager
+from ..evaluation.constants import MISSING_EVAL_DEPENDENCIES_MESSAGE
 from ..evaluation.local_eval_set_results_manager import LocalEvalSetResultsManager
 from ..sessions.in_memory_session_service import InMemorySessionService
 from .cli import run_cli
-from .cli_eval import MISSING_EVAL_DEPENDENCIES_MESSAGE
 from .fast_api import get_fast_api_app
 from .utils import envs
 from .utils import evals
@@ -146,6 +145,18 @@ def deploy():
     type=str,
     help="Optional. The Google Cloud Region for using VertexAI as backend.",
 )
+@click.option(
+    "--type",
+    type=click.Choice([t.value for t in cli_create.Type]),
+    help=(
+        "EXPERIMENTAL Optional. Type of agent to create: 'config' or 'code'."
+        " 'config' is not ready for use so it defaults to 'code'. It may change"
+        " later once 'config' is ready for use."
+    ),
+    default=cli_create.Type.CODE.value,
+    show_default=True,
+    hidden=True,  # Won't show in --help output. Not ready for use.
+)
 @click.argument("app_name", type=str, required=True)
 def cli_create_cmd(
     app_name: str,
@@ -153,6 +164,7 @@ def cli_create_cmd(
     api_key: Optional[str],
     project: Optional[str],
     region: Optional[str],
+    type: Optional[cli_create.Type],
 ):
   """Creates a new app in the current folder with prepopulated agent template.
 
@@ -168,6 +180,7 @@ def cli_create_cmd(
       google_api_key=api_key,
       google_cloud_project=project,
       google_cloud_region=region,
+      type=type,
   )
 
 
@@ -461,7 +474,10 @@ def adk_services_options():
         "--session_service_uri",
         help=(
             """Optional. The URI of the session service.
-          - Use 'agentengine://<agent_engine_resource_id>' to connect to Agent Engine sessions.
+          - Use 'agentengine://<agent_engine>' to connect to Agent Engine
+            sessions. <agent_engine> can either be the full qualified resource
+            name 'projects/abc/locations/us-central1/reasoningEngines/123' or
+            the resource id '123'.
           - Use 'sqlite://<path_to_sqlite_file>' to connect to a SQLite DB.
           - See https://docs.sqlalchemy.org/en/20/core/engines.html#backend-specific-urls for more details on supported database URIs."""
         ),
@@ -476,22 +492,14 @@ def adk_services_options():
         default=None,
     )
     @click.option(
-        "--eval_storage_uri",
-        type=str,
-        help=(
-            "Optional. The evals storage URI to store agent evals,"
-            " supported URIs: gs://<bucket name>."
-        ),
-        default=None,
-    )
-    @click.option(
         "--memory_service_uri",
         type=str,
-        help=(
-            """Optional. The URI of the memory service.
+        help=("""Optional. The URI of the memory service.
             - Use 'rag://<rag_corpus_id>' to connect to Vertex AI Rag Memory Service.
-            - Use 'agentengine://<agent_engine_resource_id>' to connect to Vertex AI Memory Bank Service. e.g. agentengine://12345"""
-        ),
+            - Use 'agentengine://<agent_engine>' to connect to Agent Engine
+              sessions. <agent_engine> can either be the full qualified resource
+              name 'projects/abc/locations/us-central1/reasoningEngines/123' or
+              the resource id '123'."""),
         default=None,
     )
     @functools.wraps(func)
@@ -545,6 +553,13 @@ def fast_api_common_options():
 
   def decorator(func):
     @click.option(
+        "--host",
+        type=str,
+        help="Optional. The binding host of the server",
+        default="127.0.0.1",
+        show_default=True,
+    )
+    @click.option(
         "--port",
         type=int,
         help="Optional. The port of the server",
@@ -554,6 +569,14 @@ def fast_api_common_options():
         "--allow_origins",
         help="Optional. Any additional origins to allow for CORS.",
         multiple=True,
+    )
+    @click.option(
+        "-v",
+        "--verbose",
+        is_flag=True,
+        show_default=True,
+        default=False,
+        help="Enable verbose (DEBUG) logging. Shortcut for --log_level DEBUG.",
     )
     @click.option(
         "--log_level",
@@ -576,8 +599,31 @@ def fast_api_common_options():
             " for Cloud Run."
         ),
     )
+    @click.option(
+        "--a2a",
+        is_flag=True,
+        show_default=True,
+        default=False,
+        help="Optional. Whether to enable A2A endpoint.",
+    )
+    @click.option(
+        "--reload_agents",
+        is_flag=True,
+        default=False,
+        show_default=True,
+        help="Optional. Whether to enable live reload for agents changes.",
+    )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    @click.pass_context
+    def wrapper(ctx, *args, **kwargs):
+      # If verbose flag is set and log level is not set, set log level to DEBUG.
+      log_level_source = ctx.get_parameter_source("log_level")
+      if (
+          kwargs.pop("verbose", False)
+          and log_level_source == ParameterSource.DEFAULT
+      ):
+        kwargs["log_level"] = "DEBUG"
+
       return func(*args, **kwargs)
 
     return wrapper
@@ -586,13 +632,6 @@ def fast_api_common_options():
 
 
 @main.command("web")
-@click.option(
-    "--host",
-    type=str,
-    help="Optional. The binding host of the server",
-    default="127.0.0.1",
-    show_default=True,
-)
 @fast_api_common_options()
 @adk_services_options()
 @deprecated_adk_services_options()
@@ -617,6 +656,8 @@ def cli_web(
     memory_service_uri: Optional[str] = None,
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
+    a2a: bool = False,
+    reload_agents: bool = False,
 ):
   """Starts a FastAPI server with Web UI for agents.
 
@@ -625,7 +666,7 @@ def cli_web(
 
   Example:
 
-    adk web --port=[port] path/to/agents_dir
+    adk web --session_service_uri=[uri] --port=[port] path/to/agents_dir
   """
   logs.setup_adk_logger(getattr(logging, log_level.upper()))
 
@@ -663,6 +704,10 @@ def cli_web(
       web=True,
       trace_to_cloud=trace_to_cloud,
       lifespan=_lifespan,
+      a2a=a2a,
+      host=host,
+      port=port,
+      reload_agents=reload_agents,
   )
   config = uvicorn.Config(
       app,
@@ -676,16 +721,6 @@ def cli_web(
 
 
 @main.command("api_server")
-@click.option(
-    "--host",
-    type=str,
-    help="Optional. The binding host of the server",
-    default="127.0.0.1",
-    show_default=True,
-)
-@fast_api_common_options()
-@adk_services_options()
-@deprecated_adk_services_options()
 # The directory of agents, where each sub-directory is a single agent.
 # By default, it is the current working directory
 @click.argument(
@@ -695,6 +730,9 @@ def cli_web(
     ),
     default=os.getcwd(),
 )
+@fast_api_common_options()
+@adk_services_options()
+@deprecated_adk_services_options()
 def cli_api_server(
     agents_dir: str,
     eval_storage_uri: Optional[str] = None,
@@ -709,6 +747,8 @@ def cli_api_server(
     memory_service_uri: Optional[str] = None,
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
+    a2a: bool = False,
+    reload_agents: bool = False,
 ):
   """Starts a FastAPI server for agents.
 
@@ -717,7 +757,7 @@ def cli_api_server(
 
   Example:
 
-    adk api_server --port=[port] path/to/agents_dir
+    adk api_server --session_service_uri=[uri] --port=[port] path/to/agents_dir
   """
   logs.setup_adk_logger(getattr(logging, log_level.upper()))
 
@@ -733,6 +773,10 @@ def cli_api_server(
           allow_origins=allow_origins,
           web=False,
           trace_to_cloud=trace_to_cloud,
+          a2a=a2a,
+          host=host,
+          port=port,
+          reload_agents=reload_agents,
       ),
       host=host,
       port=port,
@@ -777,7 +821,19 @@ def cli_api_server(
         " of the AGENT source code)."
     ),
 )
-@fast_api_common_options()
+@click.option(
+    "--port",
+    type=int,
+    default=8000,
+    help="Optional. The port of the ADK API server (default: 8000).",
+)
+@click.option(
+    "--trace_to_cloud",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Optional. Whether to enable Cloud Trace for cloud run.",
+)
 @click.option(
     "--with_ui",
     is_flag=True,
@@ -787,11 +843,6 @@ def cli_api_server(
         "Optional. Deploy ADK Web UI if set. (default: deploy ADK API server"
         " only)"
     ),
-)
-@click.option(
-    "--verbosity",
-    type=LOG_LEVELS,
-    help="Deprecated. Use --log_level instead.",
 )
 @click.option(
     "--temp_folder",
@@ -807,6 +858,17 @@ def cli_api_server(
     ),
 )
 @click.option(
+    "--verbosity",
+    type=LOG_LEVELS,
+    help="Deprecated. Use --log_level instead.",
+)
+@click.argument(
+    "agent",
+    type=click.Path(
+        exists=True, dir_okay=True, file_okay=False, resolve_path=True
+    ),
+)
+@click.option(
     "--adk_version",
     type=str,
     default=version.__version__,
@@ -816,23 +878,8 @@ def cli_api_server(
         " version in the dev environment)"
     ),
 )
-@click.option(
-    "--eval_storage_uri",
-    type=str,
-    help=(
-        "Optional. The evals storage URI to store agent evals,"
-        " supported URIs: gs://<bucket name>."
-    ),
-    default=None,
-)
 @adk_services_options()
 @deprecated_adk_services_options()
-@click.argument(
-    "agent",
-    type=click.Path(
-        exists=True, dir_okay=True, file_okay=False, resolve_path=True
-    ),
-)
 def cli_deploy_cloud_run(
     agent: str,
     project: Optional[str],
@@ -843,17 +890,17 @@ def cli_deploy_cloud_run(
     port: int,
     trace_to_cloud: bool,
     with_ui: bool,
+    verbosity: str,
     adk_version: str,
     log_level: Optional[str] = None,
-    verbosity: str = "WARNING",
-    reload: bool = True,
-    allow_origins: Optional[list[str]] = None,
     session_service_uri: Optional[str] = None,
     artifact_service_uri: Optional[str] = None,
     memory_service_uri: Optional[str] = None,
     eval_storage_uri: Optional[str] = None,
     session_db_url: Optional[str] = None,  # Deprecated
     artifact_storage_uri: Optional[str] = None,  # Deprecated
+    a2a: bool = False,
+    reload_agents: bool = False,
 ):
   """Deploys an agent to Cloud Run.
 
@@ -876,7 +923,6 @@ def cli_deploy_cloud_run(
         temp_folder=temp_folder,
         port=port,
         trace_to_cloud=trace_to_cloud,
-        allow_origins=allow_origins,
         with_ui=with_ui,
         log_level=log_level,
         verbosity=verbosity,
@@ -884,6 +930,7 @@ def cli_deploy_cloud_run(
         session_service_uri=session_service_uri,
         artifact_service_uri=artifact_service_uri,
         memory_service_uri=memory_service_uri,
+        a2a=a2a,
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
@@ -910,6 +957,17 @@ def cli_deploy_cloud_run(
     "--staging_bucket",
     type=str,
     help="Required. GCS bucket for staging the deployment artifacts.",
+)
+@click.option(
+    "--agent_engine_id",
+    type=str,
+    default=None,
+    help=(
+        "Optional. ID of the Agent Engine instance to update if it exists"
+        " (default: None, which means a new instance will be created)."
+        " The corresponding resource name in Agent Engine will be:"
+        " `projects/{project}/locations/{region}/reasoningEngines/{agent_engine_id}`."
+    ),
 )
 @click.option(
     "--trace_to_cloud",
@@ -975,6 +1033,16 @@ def cli_deploy_cloud_run(
         " any.)"
     ),
 )
+@click.option(
+    "--absolutize_imports",
+    type=bool,
+    default=True,
+    help=(
+        "Optional. Whether to absolutize imports. If True, all relative imports"
+        " will be converted to absolute import statements (default: True)."
+        " NOTE: This flag is temporary and will be removed in the future."
+    ),
+)
 @click.argument(
     "agent",
     type=click.Path(
@@ -986,6 +1054,7 @@ def cli_deploy_agent_engine(
     project: str,
     region: str,
     staging_bucket: str,
+    agent_engine_id: Optional[str],
     trace_to_cloud: bool,
     display_name: str,
     description: str,
@@ -993,10 +1062,9 @@ def cli_deploy_agent_engine(
     temp_folder: str,
     env_file: str,
     requirements_file: str,
+    absolutize_imports: bool,
 ):
   """Deploys an agent to Agent Engine.
-
-  AGENT: The path to the agent source code folder.
 
   Example:
 
@@ -1009,6 +1077,7 @@ def cli_deploy_agent_engine(
         project=project,
         region=region,
         staging_bucket=staging_bucket,
+        agent_engine_id=agent_engine_id,
         trace_to_cloud=trace_to_cloud,
         display_name=display_name,
         description=description,
@@ -1016,6 +1085,165 @@ def cli_deploy_agent_engine(
         temp_folder=temp_folder,
         env_file=env_file,
         requirements_file=requirements_file,
+        absolutize_imports=absolutize_imports,
+    )
+  except Exception as e:
+    click.secho(f"Deploy failed: {e}", fg="red", err=True)
+
+
+@deploy.command("gke")
+@click.option(
+    "--project",
+    type=str,
+    help=(
+        "Required. Google Cloud project to deploy the agent. When absent,"
+        " default project from gcloud config is used."
+    ),
+)
+@click.option(
+    "--region",
+    type=str,
+    help=(
+        "Required. Google Cloud region to deploy the agent. When absent,"
+        " gcloud run deploy will prompt later."
+    ),
+)
+@click.option(
+    "--cluster_name",
+    type=str,
+    help="Required. The name of the GKE cluster.",
+)
+@click.option(
+    "--service_name",
+    type=str,
+    default="adk-default-service-name",
+    help=(
+        "Optional. The service name to use in GKE (default:"
+        " 'adk-default-service-name')."
+    ),
+)
+@click.option(
+    "--app_name",
+    type=str,
+    default="",
+    help=(
+        "Optional. App name of the ADK API server (default: the folder name"
+        " of the AGENT source code)."
+    ),
+)
+@click.option(
+    "--port",
+    type=int,
+    default=8000,
+    help="Optional. The port of the ADK API server (default: 8000).",
+)
+@click.option(
+    "--trace_to_cloud",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Optional. Whether to enable Cloud Trace for GKE.",
+)
+@click.option(
+    "--with_ui",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help=(
+        "Optional. Deploy ADK Web UI if set. (default: deploy ADK API server"
+        " only)"
+    ),
+)
+@click.option(  # This is the crucial missing piece
+    "--verbosity",
+    type=LOG_LEVELS,
+    help="Deprecated. Use --log_level instead.",
+)
+@click.option(
+    "--log_level",
+    type=LOG_LEVELS,
+    default="INFO",
+    help="Optional. Set the logging level",
+)
+@click.option(
+    "--temp_folder",
+    type=str,
+    default=os.path.join(
+        tempfile.gettempdir(),
+        "gke_deploy_src",
+        datetime.now().strftime("%Y%m%d_%H%M%S"),
+    ),
+    help=(
+        "Optional. Temp folder for the generated GKE source files"
+        " (default: a timestamped folder in the system temp directory)."
+    ),
+)
+@click.argument(
+    "agent",
+    type=click.Path(
+        exists=True, dir_okay=True, file_okay=False, resolve_path=True
+    ),
+)
+@click.option(
+    "--adk_version",
+    type=str,
+    default=version.__version__,
+    show_default=True,
+    help=(
+        "Optional. The ADK version used in GKE deployment. (default: the"
+        " version in the dev environment)"
+    ),
+)
+@adk_services_options()
+@deprecated_adk_services_options()
+def cli_deploy_gke(
+    agent: str,
+    project: Optional[str],
+    region: Optional[str],
+    cluster_name: str,
+    service_name: str,
+    app_name: str,
+    temp_folder: str,
+    port: int,
+    trace_to_cloud: bool,
+    with_ui: bool,
+    verbosity: str,
+    adk_version: str,
+    log_level: Optional[str] = None,
+    session_service_uri: Optional[str] = None,
+    artifact_service_uri: Optional[str] = None,
+    memory_service_uri: Optional[str] = None,
+    session_db_url: Optional[str] = None,  # Deprecated
+    artifact_storage_uri: Optional[str] = None,  # Deprecated
+):
+  """Deploys an agent to GKE.
+
+  AGENT: The path to the agent source code folder.
+
+  Example:
+
+    adk deploy gke --project=[project] --region=[region] --cluster_name=[cluster_name] path/to/my_agent
+  """
+  session_service_uri = session_service_uri or session_db_url
+  artifact_service_uri = artifact_service_uri or artifact_storage_uri
+  try:
+    cli_deploy.to_gke(
+        agent_folder=agent,
+        project=project,
+        region=region,
+        cluster_name=cluster_name,
+        service_name=service_name,
+        app_name=app_name,
+        temp_folder=temp_folder,
+        port=port,
+        trace_to_cloud=trace_to_cloud,
+        with_ui=with_ui,
+        verbosity=verbosity,
+        log_level=log_level,
+        adk_version=adk_version,
+        session_service_uri=session_service_uri,
+        artifact_service_uri=artifact_service_uri,
+        memory_service_uri=memory_service_uri,
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
