@@ -40,6 +40,7 @@ from .artifacts.base_artifact_service import BaseArtifactService
 from .artifacts.in_memory_artifact_service import InMemoryArtifactService
 from .auth.credential_service.base_credential_service import BaseCredentialService
 from .code_executors.built_in_code_executor import BuiltInCodeExecutor
+from .errors.not_found_error import NotFoundError
 from .events.event import Event
 from .events.event import EventActions
 from .flows.llm_flows.functions import find_matching_function_call
@@ -197,7 +198,7 @@ class Runner:
           app_name=self.app_name, user_id=user_id, session_id=session_id
       )
       if not session:
-        raise ValueError(f'Session not found: {session_id}')
+        raise NotFoundError(f'Session not found: {session_id}')
 
       invocation_context = self._new_invocation_context(
           session,
@@ -386,7 +387,7 @@ class Runner:
           app_name=self.app_name, user_id=user_id, session_id=session_id
       )
       if not session:
-        raise ValueError(f'Session not found: {session_id}')
+        raise NotFoundError(f'Session not found: {session_id}')
     invocation_context = self._new_invocation_context_for_live(
         session,
         live_request_queue=live_request_queue,
