@@ -20,3 +20,5 @@ from .auth_schemes import AuthScheme
 from .auth_schemes import AuthSchemeType
 from .auth_schemes import OpenIdConnectWithConfig
 from .auth_tool import AuthConfig
+from .auth_credential import HttpAuth
+from .auth_credential import HttpCredentials
