@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from google.adk import Agent
-from google.adk.tools.load_artifacts_tool import load_artifacts
+from google.adk.tools.load_artifacts_tool import load_artifacts_tool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import Client
 from google.genai import types
@@ -49,5 +49,5 @@ root_agent = Agent(
     description="""An agent that generates images and answer questions about the images.""",
     instruction="""You are an agent whose job is to generate or edit an image based on the user's prompt.
 """,
-    tools=[generate_image, load_artifacts],
+    tools=[generate_image, load_artifacts_tool],
 )
