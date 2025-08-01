@@ -315,8 +315,15 @@ def to_agent_engine(
     shutil.rmtree(agent_src_path)
 
   try:
+    ignore_patterns = None
+    ae_ignore_path = os.path.join(agent_folder, '.ae_ignore')
+    if os.path.exists(ae_ignore_path):
+      click.echo(f'Ignoring files matching the patterns in {ae_ignore_path}')
+      with open(ae_ignore_path, 'r') as f:
+        patterns = [pattern.strip() for pattern in f.readlines()]
+        ignore_patterns = shutil.ignore_patterns(*patterns)
     click.echo('Copying agent source code...')
-    shutil.copytree(agent_folder, agent_src_path)
+    shutil.copytree(agent_folder, agent_src_path, ignore=ignore_patterns)
     click.echo('Copying agent source code complete.')
 
     click.echo('Initializing Vertex AI...')
@@ -341,7 +348,7 @@ def to_agent_engine(
     env_vars = None
     if not env_file:
       # Attempt to read the env variables from .env in the dir (if any).
-      env_file = os.path.join(agent_src_path, '.env')
+      env_file = os.path.join(agent_folder, '.env')
     if os.path.exists(env_file):
       from dotenv import dotenv_values
 
@@ -459,7 +466,6 @@ def to_gke(
     trace_to_cloud: bool,
     with_ui: bool,
     log_level: str,
-    verbosity: str,
     adk_version: str,
     allow_origins: Optional[list[str]] = None,
     session_service_uri: Optional[str] = None,
@@ -480,7 +486,7 @@ def to_gke(
     port: The port of the ADK api server.
     trace_to_cloud: Whether to enable Cloud Trace.
     with_ui: Whether to deploy with UI.
-    verbosity: The verbosity level of the CLI.
+    log_level: The logging level.
     adk_version: The ADK version to use in GKE.
     allow_origins: The list of allowed origins for the ADK api server.
     session_service_uri: The URI of the session service.
@@ -574,7 +580,7 @@ def to_gke(
             '--tag',
             image_name,
             '--verbosity',
-            log_level.lower() if log_level else verbosity,
+            log_level.lower(),
             temp_folder,
         ],
         check=True,
