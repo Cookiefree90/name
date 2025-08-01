@@ -109,26 +109,45 @@ class BaseLlmFlow(ABC):
             await llm_connection.send_history(llm_request.contents)
             trace_send_data(invocation_context, event_id, llm_request.contents)
 
-      send_task = asyncio.create_task(
-          self._send_to_model(llm_connection, invocation_context)
-      )
+      event_queue = asyncio.Queue()
+
+      async def send_handler():
+        """Handles sending user input and generating user text events."""
+        async for event in self._send_to_model(
+            llm_connection, invocation_context
+        ):
+          await event_queue.put(event)
+
+      async def receive_handler():
+        """Handles receiving model output and generating model events."""
+        try:
+          async for event in self._receive_from_model(
+              llm_connection, event_id, invocation_context, llm_request
+          ):
+            await event_queue.put(event)
+        finally:
+          # Signal that the receiving process is complete.
+          await event_queue.put(None)
+
+      send_task = asyncio.create_task(send_handler())
+      receive_task = asyncio.create_task(receive_handler())
+      tasks = {send_task, receive_task}
 
       try:
-        async for event in self._receive_from_model(
-            llm_connection,
-            event_id,
-            invocation_context,
-            llm_request,
-        ):
-          # Empty event means the queue is closed.
-          if not event:
+        while True:
+          # Consume events from the unified queue.
+          event = await event_queue.get()
+          if event is None:  # End of stream signal
             break
+
           logger.debug('Receive new event: %s', event)
           yield event
-          # send back the function response
+
+          # Forward function responses back to the model.
           if event.get_function_responses():
             logger.debug('Sending back last function response event: %s', event)
             invocation_context.live_request_queue.send_content(event.content)
+
           if (
               event.content
               and event.content.parts
@@ -140,33 +159,19 @@ class BaseLlmFlow(ABC):
             # cancel the tasks that belongs to the closed connection.
             send_task.cancel()
             await llm_connection.close()
-          if (
-              event.content
-              and event.content.parts
-              and event.content.parts[0].function_response
-              and event.content.parts[0].function_response.name
-              == 'task_completed'
-          ):
-            # this is used for sequential agent to signal the end of the agent.
-            await asyncio.sleep(1)
-            # cancel the tasks that belongs to the closed connection.
-            send_task.cancel()
-            return
       finally:
-        # Clean up
-        if not send_task.done():
-          send_task.cancel()
-        try:
-          await send_task
-        except asyncio.CancelledError:
-          pass
+        # Clean up all running tasks.
+        for task in tasks:
+          if not task.done():
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
   async def _send_to_model(
       self,
       llm_connection: BaseLlmConnection,
       invocation_context: InvocationContext,
-  ):
-    """Sends data to model."""
+  ) -> AsyncGenerator[Event, None]:
+    """Sends data to model and yields user events for text messages."""
     while True:
       live_request_queue = invocation_context.live_request_queue
       try:
@@ -212,7 +217,23 @@ class BaseLlmFlow(ABC):
           )
         await llm_connection.send_realtime(live_request.blob)
 
-      if live_request.content:
+      # If the request is a user-sent text message, create and yield an event
+      # so it can be saved to the session history.
+      if (
+          live_request.content
+          and live_request.content.parts
+          and live_request.content.parts[0].text
+      ):
+        user_event = Event(
+            invocation_id=invocation_context.invocation_id,
+            author='user',
+            content=live_request.content,
+        )
+        yield user_event
+        await llm_connection.send_content(live_request.content)
+      elif live_request.content:
+        # Handle other content types, like function responses, without creating
+        # a user event.
         await llm_connection.send_content(live_request.content)
 
   async def _receive_from_model(
