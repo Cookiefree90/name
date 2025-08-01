@@ -143,6 +143,8 @@ async def handle_function_calls_async(
   for function_call in function_calls:
     if filters and function_call.id not in filters:
       continue
+    if function_call.name is None or function_call.name.strip() == '':
+      continue
     tool, tool_context = _get_tool_and_context(
         invocation_context,
         function_call_event,
