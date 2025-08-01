@@ -13,13 +13,9 @@
 # limitations under the License.
 
 from .base_retrieval_tool import BaseRetrievalTool
-from .files_retrieval import FilesRetrieval
-from .llama_index_retrieval import LlamaIndexRetrieval
 
 __all__ = [
     'BaseRetrievalTool',
-    'FilesRetrieval',
-    'LlamaIndexRetrieval',
 ]
 
 try:
@@ -34,3 +30,18 @@ except ImportError:
       'The Vertex sdk is not installed. If you want to use the Vertex RAG with'
       ' agents, please install it. If not, you can ignore this warning.'
   )
+
+try:
+
+  from .files_retrieval import FilesRetrieval
+  from .llama_index_retrieval import LlamaIndexRetrieval
+
+  __all__.extend([
+      'FilesRetrieval',
+      'LlamaIndexRetrieval',
+  ])
+except ImportError:
+  import logging
+
+  logger = logging.getLogger('google_adk.' + __name__)
+  logger.debug('Please install LLama-Index if you wish to use these imports.')
