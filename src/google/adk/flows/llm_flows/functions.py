@@ -143,12 +143,31 @@ async def handle_function_calls_async(
   for function_call in function_calls:
     if filters and function_call.id not in filters:
       continue
-    tool, tool_context = _get_tool_and_context(
-        invocation_context,
-        function_call_event,
-        function_call,
-        tools_dict,
-    )
+    # tool = None
+    # tool_context = None
+    try:
+        tool, tool_context = _get_tool_and_context(
+            invocation_context,
+            function_call_event,
+            function_call,
+            tools_dict,
+        )
+    except ValueError as e:
+        part = types.Part.from_function_response(
+            name=function_call.name,
+            response={"result": str(e)}
+        )
+        part.function_response.id = function_call.id
+        function_response_events.append(
+            Event(invocation_id=invocation_context.invocation_id,
+                  author=invocation_context.agent.name,
+                  content=types.Content(
+                      role='user',
+                      parts=[part],
+                  ),
+                  branch=invocation_context.branch, )
+        )
+        continue
 
     with tracer.start_as_current_span(f'execute_tool {tool.name}'):
       # Do not use "args" as the variable name, because it is a reserved keyword
