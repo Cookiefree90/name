@@ -45,9 +45,7 @@ class LlmRequest(BaseModel):
   contents: list[types.Content] = Field(default_factory=list)
   """The contents to send to the model."""
 
-  config: types.GenerateContentConfig = Field(
-      default_factory=types.GenerateContentConfig
-  )
+  config: Optional[types.GenerateContentConfig] = None
   live_connect_config: types.LiveConnectConfig = types.LiveConnectConfig()
   """Additional config for the generate content request.
 
