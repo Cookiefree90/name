@@ -17,22 +17,49 @@ from __future__ import annotations
 from datetime import datetime
 from datetime import timezone
 import logging
+import sys
 from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
 import uuid
 
-from a2a.server.events import Event as A2AEvent
-from a2a.types import DataPart
-from a2a.types import Message
-from a2a.types import Part as A2APart
-from a2a.types import Role
-from a2a.types import Task
-from a2a.types import TaskState
-from a2a.types import TaskStatus
-from a2a.types import TaskStatusUpdateEvent
-from a2a.types import TextPart
+# Check Python version first
+if sys.version_info < (3, 10):
+  raise ImportError(
+      "A2A requires Python 3.10 or above. Please upgrade your Python version. "
+      f"Current version: {sys.version_info.major}.{sys.version_info.minor}"
+  )
+
+# Import a2a packages with fallback to a2a_sdk
+try:
+  from a2a.server.events import Event as A2AEvent
+  from a2a.types import DataPart
+  from a2a.types import Message
+  from a2a.types import Part as A2APart
+  from a2a.types import Role
+  from a2a.types import Task
+  from a2a.types import TaskState
+  from a2a.types import TaskStatus
+  from a2a.types import TaskStatusUpdateEvent
+  from a2a.types import TextPart
+except ImportError:
+  try:
+    from a2a_sdk.server.events import Event as A2AEvent
+    from a2a_sdk.types import DataPart
+    from a2a_sdk.types import Message
+    from a2a_sdk.types import Part as A2APart
+    from a2a_sdk.types import Role
+    from a2a_sdk.types import Task
+    from a2a_sdk.types import TaskState
+    from a2a_sdk.types import TaskStatus
+    from a2a_sdk.types import TaskStatusUpdateEvent
+    from a2a_sdk.types import TextPart
+  except ImportError:
+    raise ImportError(
+        "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as a"
+        " dependency."
+    )
 from google.genai import types as genai_types
 
 from ...agents.invocation_context import InvocationContext

@@ -24,13 +24,42 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 10), reason="A2A tool requires Python 3.10+"
 )
 
-# Import dependencies with version checking
+# Import a2a dependencies with fallback to a2a_sdk
 try:
+  # Try importing from a2a first
   from a2a.server.agent_execution.context import RequestContext
   from a2a.server.events.event_queue import EventQueue
   from a2a.types import Message
   from a2a.types import TaskState
   from a2a.types import TextPart
+except ImportError:
+  try:
+    # Fallback to a2a_sdk
+    from a2a_sdk.server.agent_execution.context import RequestContext
+    from a2a_sdk.server.events.event_queue import EventQueue
+    from a2a_sdk.types import Message
+    from a2a_sdk.types import TaskState
+    from a2a_sdk.types import TextPart
+  except ImportError:
+    if sys.version_info < (3, 10):
+      # Create dummy classes to prevent NameError during test collection
+      # Tests will be skipped anyway due to pytestmark
+      class DummyTypes:
+        pass
+
+      RequestContext = DummyTypes()
+      EventQueue = DummyTypes()
+      Message = DummyTypes()
+      TaskState = DummyTypes()
+      TextPart = DummyTypes()
+    else:
+      raise ImportError(
+          "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as"
+          " a dependency."
+      )
+
+# Import google.genai and ADK modules (these should work regardless)
+try:
   from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
   from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutorConfig
   from google.adk.events.event import Event
@@ -42,14 +71,6 @@ except ImportError as e:
     class DummyTypes:
       pass
 
-    RequestContext = DummyTypes()
-    EventQueue = DummyTypes()
-    Message = DummyTypes()
-    Role = DummyTypes()
-    TaskState = DummyTypes()
-    TaskStatus = DummyTypes()
-    TaskStatusUpdateEvent = DummyTypes()
-    TextPart = DummyTypes()
     A2aAgentExecutor = DummyTypes()
     A2aAgentExecutorConfig = DummyTypes()
     Event = DummyTypes()

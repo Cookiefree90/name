@@ -18,12 +18,21 @@ from datetime import datetime
 from datetime import timezone
 import inspect
 import logging
+import sys
 from typing import Any
 from typing import Awaitable
 from typing import Callable
 from typing import Optional
 import uuid
 
+# Check Python version first
+if sys.version_info < (3, 10):
+  raise ImportError(
+      'A2A requires Python 3.10 or above. Please upgrade your Python version. '
+      f'Current version: {sys.version_info.major}.{sys.version_info.minor}'
+  )
+
+# Import a2a packages with fallback to a2a_sdk
 try:
   from a2a.server.agent_execution import AgentExecutor
   from a2a.server.agent_execution.context import RequestContext
@@ -36,16 +45,24 @@ try:
   from a2a.types import TaskStatus
   from a2a.types import TaskStatusUpdateEvent
   from a2a.types import TextPart
-
-except ImportError as e:
-  import sys
-
-  if sys.version_info < (3, 10):
+except ImportError:
+  try:
+    from a2a_sdk.server.agent_execution import AgentExecutor
+    from a2a_sdk.server.agent_execution.context import RequestContext
+    from a2a_sdk.server.events.event_queue import EventQueue
+    from a2a_sdk.types import Artifact
+    from a2a_sdk.types import Message
+    from a2a_sdk.types import Role
+    from a2a_sdk.types import TaskArtifactUpdateEvent
+    from a2a_sdk.types import TaskState
+    from a2a_sdk.types import TaskStatus
+    from a2a_sdk.types import TaskStatusUpdateEvent
+    from a2a_sdk.types import TextPart
+  except ImportError:
     raise ImportError(
-        'A2A requires Python 3.10 or above. Please upgrade your Python version.'
-    ) from e
-  else:
-    raise e
+        'Could not import a2a or a2a_sdk packages. Please install a2a-sdk as a'
+        ' dependency.'
+    )
 from google.adk.runners import Runner
 from pydantic import BaseModel
 from typing_extensions import override

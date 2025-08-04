@@ -14,10 +14,32 @@
 
 from __future__ import annotations
 
-from a2a.server.events import Event
-from a2a.types import Message
-from a2a.types import TaskState
-from a2a.types import TaskStatusUpdateEvent
+import sys
+
+# Check Python version first
+if sys.version_info < (3, 10):
+  raise ImportError(
+      'A2A requires Python 3.10 or above. Please upgrade your Python version. '
+      f'Current version: {sys.version_info.major}.{sys.version_info.minor}'
+  )
+
+# Import a2a packages with fallback to a2a_sdk
+try:
+  from a2a.server.events import Event
+  from a2a.types import Message
+  from a2a.types import TaskState
+  from a2a.types import TaskStatusUpdateEvent
+except ImportError:
+  try:
+    from a2a_sdk.server.events import Event
+    from a2a_sdk.types import Message
+    from a2a_sdk.types import TaskState
+    from a2a_sdk.types import TaskStatusUpdateEvent
+  except ImportError:
+    raise ImportError(
+        'Could not import a2a or a2a_sdk packages. Please install a2a-sdk as a'
+        ' dependency.'
+    )
 
 from ...utils.feature_decorator import experimental
 

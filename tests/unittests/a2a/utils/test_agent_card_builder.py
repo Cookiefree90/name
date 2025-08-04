@@ -23,13 +23,42 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 10), reason="A2A requires Python 3.10+"
 )
 
-# Import dependencies with version checking
+# Import a2a dependencies with fallback to a2a_sdk
 try:
+  # Try importing from a2a first
   from a2a.types import AgentCapabilities
   from a2a.types import AgentCard
   from a2a.types import AgentProvider
   from a2a.types import AgentSkill
   from a2a.types import SecurityScheme
+except ImportError:
+  try:
+    # Fallback to a2a_sdk
+    from a2a_sdk.types import AgentCapabilities
+    from a2a_sdk.types import AgentCard
+    from a2a_sdk.types import AgentProvider
+    from a2a_sdk.types import AgentSkill
+    from a2a_sdk.types import SecurityScheme
+  except ImportError:
+    if sys.version_info < (3, 10):
+      # Create dummy classes to prevent NameError during test collection
+      # Tests will be skipped anyway due to pytestmark
+      class DummyTypes:
+        pass
+
+      AgentCapabilities = DummyTypes()
+      AgentCard = DummyTypes()
+      AgentProvider = DummyTypes()
+      AgentSkill = DummyTypes()
+      SecurityScheme = DummyTypes()
+    else:
+      raise ImportError(
+          "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as"
+          " a dependency."
+      )
+
+# Import google.genai and ADK modules (these should work regardless)
+try:
   from google.adk.a2a.utils.agent_card_builder import _build_agent_description
   from google.adk.a2a.utils.agent_card_builder import _build_llm_agent_description_with_instructions
   from google.adk.a2a.utils.agent_card_builder import _build_loop_description
@@ -59,11 +88,6 @@ except ImportError as e:
     class DummyTypes:
       pass
 
-    AgentCapabilities = DummyTypes()
-    AgentCard = DummyTypes()
-    AgentProvider = DummyTypes()
-    AgentSkill = DummyTypes()
-    SecurityScheme = DummyTypes()
     AgentCardBuilder = DummyTypes()
     BaseAgent = DummyTypes()
     LlmAgent = DummyTypes()

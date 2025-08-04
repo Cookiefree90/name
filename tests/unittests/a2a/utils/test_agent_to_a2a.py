@@ -24,12 +24,39 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 10), reason="A2A requires Python 3.10+"
 )
 
-# Import dependencies with version checking
+# Import a2a dependencies with fallback to a2a_sdk
 try:
+  # Try importing from a2a first
   from a2a.server.apps import A2AStarletteApplication
   from a2a.server.request_handlers import DefaultRequestHandler
   from a2a.server.tasks import InMemoryTaskStore
   from a2a.types import AgentCard
+except ImportError:
+  try:
+    # Fallback to a2a_sdk
+    from a2a_sdk.server.apps import A2AStarletteApplication
+    from a2a_sdk.server.request_handlers import DefaultRequestHandler
+    from a2a_sdk.server.tasks import InMemoryTaskStore
+    from a2a_sdk.types import AgentCard
+  except ImportError:
+    if sys.version_info < (3, 10):
+      # Create dummy classes to prevent NameError during test collection
+      # Tests will be skipped anyway due to pytestmark
+      class DummyTypes:
+        pass
+
+      A2AStarletteApplication = DummyTypes()
+      DefaultRequestHandler = DummyTypes()
+      InMemoryTaskStore = DummyTypes()
+      AgentCard = DummyTypes()
+    else:
+      raise ImportError(
+          "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as"
+          " a dependency."
+      )
+
+# Import google.genai and ADK modules (these should work regardless)
+try:
   from google.adk.a2a.executor.a2a_agent_executor import A2aAgentExecutor
   from google.adk.a2a.utils.agent_card_builder import AgentCardBuilder
   from google.adk.a2a.utils.agent_to_a2a import to_a2a
@@ -47,10 +74,6 @@ except ImportError as e:
     class DummyTypes:
       pass
 
-    A2AStarletteApplication = DummyTypes()
-    DefaultRequestHandler = DummyTypes()
-    InMemoryTaskStore = DummyTypes()
-    AgentCard = DummyTypes()
     Starlette = DummyTypes()
     BaseAgent = DummyTypes()
     InMemoryArtifactService = DummyTypes()

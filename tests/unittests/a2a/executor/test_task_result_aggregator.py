@@ -22,8 +22,9 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 10), reason="A2A requires Python 3.10+"
 )
 
-# Import dependencies with version checking
+# Import a2a dependencies with fallback to a2a_sdk
 try:
+  # Try importing from a2a first
   from a2a.types import Message
   from a2a.types import Part
   from a2a.types import Role
@@ -31,6 +32,38 @@ try:
   from a2a.types import TaskStatus
   from a2a.types import TaskStatusUpdateEvent
   from a2a.types import TextPart
+except ImportError:
+  try:
+    # Fallback to a2a_sdk
+    from a2a_sdk.types import Message
+    from a2a_sdk.types import Part
+    from a2a_sdk.types import Role
+    from a2a_sdk.types import TaskState
+    from a2a_sdk.types import TaskStatus
+    from a2a_sdk.types import TaskStatusUpdateEvent
+    from a2a_sdk.types import TextPart
+  except ImportError:
+    if sys.version_info < (3, 10):
+      # Create dummy classes to prevent NameError during test collection
+      # Tests will be skipped anyway due to pytestmark
+      class DummyTypes:
+        pass
+
+      Message = DummyTypes()
+      Part = DummyTypes()
+      Role = DummyTypes()
+      TaskState = DummyTypes()
+      TaskStatus = DummyTypes()
+      TaskStatusUpdateEvent = DummyTypes()
+      TextPart = DummyTypes()
+    else:
+      raise ImportError(
+          "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as"
+          " a dependency."
+      )
+
+# Import google.genai and ADK modules (these should work regardless)
+try:
   from google.adk.a2a.executor.task_result_aggregator import TaskResultAggregator
 except ImportError as e:
   if sys.version_info < (3, 10):
@@ -39,9 +72,6 @@ except ImportError as e:
     class DummyTypes:
       pass
 
-    TaskState = DummyTypes()
-    TaskStatus = DummyTypes()
-    TaskStatusUpdateEvent = DummyTypes()
     TaskResultAggregator = DummyTypes()
   else:
     raise e

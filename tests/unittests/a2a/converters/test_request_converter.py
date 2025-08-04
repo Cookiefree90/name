@@ -23,9 +23,30 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 10), reason="A2A tool requires Python 3.10+"
 )
 
-# Import dependencies with version checking
+# Import a2a dependencies with fallback to a2a_sdk
 try:
+  # Try importing from a2a first
   from a2a.server.agent_execution import RequestContext
+except ImportError:
+  try:
+    # Fallback to a2a_sdk
+    from a2a_sdk.server.agent_execution import RequestContext
+  except ImportError:
+    if sys.version_info < (3, 10):
+      # Create dummy classes to prevent NameError during test collection
+      # Tests will be skipped anyway due to pytestmark
+      class DummyTypes:
+        pass
+
+      RequestContext = DummyTypes()
+    else:
+      raise ImportError(
+          "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as"
+          " a dependency."
+      )
+
+# Import google.genai and ADK modules (these should work regardless)
+try:
   from google.adk.a2a.converters.request_converter import _get_user_id
   from google.adk.a2a.converters.request_converter import convert_a2a_request_to_adk_run_args
   from google.adk.runners import RunConfig
@@ -37,9 +58,7 @@ except ImportError as e:
     class DummyTypes:
       pass
 
-    a2a_types = DummyTypes()
     genai_types = DummyTypes()
-    RequestContext = DummyTypes()
     RunConfig = DummyTypes()
     _get_user_id = lambda x: None
     convert_a2a_request_to_adk_run_args = lambda x: None

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+import sys
 from typing import Any
 from typing import AsyncGenerator
 from typing import Optional
@@ -24,6 +25,14 @@ from typing import Union
 from urllib.parse import urlparse
 import uuid
 
+# Check Python version first
+if sys.version_info < (3, 10):
+  raise ImportError(
+      "A2A requires Python 3.10 or above. Please upgrade your Python version. "
+      f"Current version: {sys.version_info.major}.{sys.version_info.minor}"
+  )
+
+# Import a2a packages with fallback to a2a_sdk
 try:
   from a2a.client import A2AClient
   from a2a.client.card_resolver import A2ACardResolver
@@ -35,22 +44,25 @@ try:
   from a2a.types import SendMessageRequest
   from a2a.types import SendMessageSuccessResponse
   from a2a.types import Task as A2ATask
-except ImportError as e:
-  import sys
-
-  if sys.version_info < (3, 10):
-    raise ImportError(
-        "A2A requires Python 3.10 or above. Please upgrade your Python version."
-    ) from e
-  else:
-    raise e
-
-try:
   from a2a.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
 except ImportError:
-  # Fallback for older versions of a2a-sdk.
-  AGENT_CARD_WELL_KNOWN_PATH = "/.well-known/agent.json"
-
+  try:
+    from a2a_sdk.client import A2AClient
+    from a2a_sdk.client.card_resolver import A2ACardResolver
+    from a2a_sdk.types import AgentCard
+    from a2a_sdk.types import Message as A2AMessage
+    from a2a_sdk.types import MessageSendParams as A2AMessageSendParams
+    from a2a_sdk.types import Part as A2APart
+    from a2a_sdk.types import Role
+    from a2a_sdk.types import SendMessageRequest
+    from a2a_sdk.types import SendMessageSuccessResponse
+    from a2a_sdk.types import Task as A2ATask
+    from a2a_sdk.utils.constants import AGENT_CARD_WELL_KNOWN_PATH
+  except ImportError:
+    raise ImportError(
+        "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as a"
+        " dependency."
+    )
 from google.genai import types as genai_types
 import httpx
 

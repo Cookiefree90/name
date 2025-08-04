@@ -23,14 +23,45 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 10), reason="A2A requires Python 3.10+"
 )
 
-# Import dependencies with version checking
+# Import a2a dependencies with fallback to a2a_sdk
 try:
+  # Try importing from a2a first
   from a2a.types import DataPart
   from a2a.types import Message
   from a2a.types import Role
   from a2a.types import Task
   from a2a.types import TaskState
   from a2a.types import TaskStatusUpdateEvent
+except ImportError:
+  try:
+    # Fallback to a2a_sdk
+    from a2a_sdk.types import DataPart
+    from a2a_sdk.types import Message
+    from a2a_sdk.types import Role
+    from a2a_sdk.types import Task
+    from a2a_sdk.types import TaskState
+    from a2a_sdk.types import TaskStatusUpdateEvent
+  except ImportError:
+    if sys.version_info < (3, 10):
+      # Create dummy classes to prevent NameError during test collection
+      # Tests will be skipped anyway due to pytestmark
+      class DummyTypes:
+        pass
+
+      DataPart = DummyTypes()
+      Message = DummyTypes()
+      Role = DummyTypes()
+      Task = DummyTypes()
+      TaskState = DummyTypes()
+      TaskStatusUpdateEvent = DummyTypes()
+    else:
+      raise ImportError(
+          "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as"
+          " a dependency."
+      )
+
+# Import google.genai and ADK modules (these should work regardless)
+try:
   from google.adk.a2a.converters.event_converter import _create_artifact_id
   from google.adk.a2a.converters.event_converter import _create_error_status_event
   from google.adk.a2a.converters.event_converter import _create_status_update_event
@@ -54,12 +85,6 @@ except ImportError as e:
     class DummyTypes:
       pass
 
-    DataPart = DummyTypes()
-    Message = DummyTypes()
-    Role = DummyTypes()
-    Task = DummyTypes()
-    TaskState = DummyTypes()
-    TaskStatusUpdateEvent = DummyTypes()
     _create_artifact_id = lambda *args: None
     _create_error_status_event = lambda *args: None
     _create_status_update_event = lambda *args: None

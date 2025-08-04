@@ -20,20 +20,32 @@ from typing import Dict
 from typing import List
 from typing import Optional
 
+# Check Python version first
+if sys.version_info < (3, 10):
+  raise ImportError(
+      'A2A requires Python 3.10 or above. Please upgrade your Python version. '
+      f'Current version: {sys.version_info.major}.{sys.version_info.minor}'
+  )
+
+# Import a2a packages with fallback to a2a_sdk
 try:
   from a2a.types import AgentCapabilities
   from a2a.types import AgentCard
   from a2a.types import AgentProvider
   from a2a.types import AgentSkill
   from a2a.types import SecurityScheme
-except ImportError as e:
-  if sys.version_info < (3, 10):
+except ImportError:
+  try:
+    from a2a_sdk.types import AgentCapabilities
+    from a2a_sdk.types import AgentCard
+    from a2a_sdk.types import AgentProvider
+    from a2a_sdk.types import AgentSkill
+    from a2a_sdk.types import SecurityScheme
+  except ImportError:
     raise ImportError(
-        'A2A requires Python 3.10 or above. Please upgrade your Python version.'
-    ) from e
-  else:
-    raise e
-
+        'Could not import a2a or a2a_sdk packages. Please install a2a-sdk as a'
+        ' dependency.'
+    )
 
 from ...agents.base_agent import BaseAgent
 from ...agents.llm_agent import LlmAgent

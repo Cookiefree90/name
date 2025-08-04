@@ -21,22 +21,29 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import sys
 from typing import Optional
 
 from .utils import _get_adk_metadata_key
 
+# Check Python version first
+if sys.version_info < (3, 10):
+  raise ImportError(
+      'A2A requires Python 3.10 or above. Please upgrade your Python version. '
+      f'Current version: {sys.version_info.major}.{sys.version_info.minor}'
+  )
+
+# Import a2a packages with fallback to a2a_sdk
 try:
   from a2a import types as a2a_types
-except ImportError as e:
-  import sys
-
-  if sys.version_info < (3, 10):
+except ImportError:
+  try:
+    from a2a_sdk import types as a2a_types
+  except ImportError:
     raise ImportError(
-        'A2A requires Python 3.10 or above. Please upgrade your Python version.'
-    ) from e
-  else:
-    raise e
-
+        'Could not import a2a or a2a_sdk packages. Please install a2a-sdk as a'
+        ' dependency.'
+    )
 from google.genai import types as genai_types
 
 from ...utils.feature_decorator import experimental

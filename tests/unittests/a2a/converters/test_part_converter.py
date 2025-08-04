@@ -24,9 +24,30 @@ pytestmark = pytest.mark.skipif(
     sys.version_info < (3, 10), reason="A2A requires Python 3.10+"
 )
 
-# Import dependencies with version checking
+# Import a2a dependencies with fallback to a2a_sdk
 try:
+  # Try importing from a2a first
   from a2a import types as a2a_types
+except ImportError:
+  try:
+    # Fallback to a2a_sdk
+    from a2a_sdk import types as a2a_types
+  except ImportError:
+    if sys.version_info < (3, 10):
+      # Create dummy classes to prevent NameError during test collection
+      # Tests will be skipped anyway due to pytestmark
+      class DummyTypes:
+        pass
+
+      a2a_types = DummyTypes()
+    else:
+      raise ImportError(
+          "Could not import a2a or a2a_sdk packages. Please install a2a-sdk as"
+          " a dependency."
+      )
+
+# Import google.genai and ADK modules (these should work regardless)
+try:
   from google.adk.a2a.converters.part_converter import A2A_DATA_PART_METADATA_TYPE_CODE_EXECUTION_RESULT
   from google.adk.a2a.converters.part_converter import A2A_DATA_PART_METADATA_TYPE_EXECUTABLE_CODE
   from google.adk.a2a.converters.part_converter import A2A_DATA_PART_METADATA_TYPE_FUNCTION_CALL
@@ -43,7 +64,6 @@ except ImportError as e:
     class DummyTypes:
       pass
 
-    a2a_types = DummyTypes()
     genai_types = DummyTypes()
     A2A_DATA_PART_METADATA_TYPE_FUNCTION_CALL = "function_call"
     A2A_DATA_PART_METADATA_TYPE_FUNCTION_RESPONSE = "function_response"
