@@ -1062,8 +1062,7 @@ def cli_deploy_cloud_run(
     type=str,
     default="agent_engine_app",
     help=(
-        "Optional. Python file for defining the ADK application"
-        " (default: a file named agent_engine_app.py)"
+        "Optional. The module name (without .py) for the Python file defining the ADK Application (default: 'agent_engine_app')."
     ),
 )
 @click.option(
