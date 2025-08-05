@@ -171,6 +171,22 @@ class LlmAgent(BaseAgent):
   """
   disallow_transfer_to_peers: bool = False
   """Disallows LLM-controlled transferring to the peer agents."""
+
+  fallback_to_parent: bool = False
+  """Forces the agent to transfer control back to its parent after execution.
+  
+  When set to True, the agent must transfer control to its parent agent after
+  its execution is complete, acting as the inverse of disallow_transfer_to_parent.
+  This provides a declarative way to ensure that child agents reliably return
+  to the parent's context after completing their tasks.
+  
+  The fallback behavior is only activated when no model transfer occurs. 
+  Fallback to parent only happens when:
+  - The agent is an LlmAgent instance
+  - fallback_to_parent=True
+  - parent_agent exists
+  - The model response contains no function calls (indicating no transfer_to_agent)
+  """
   # LLM-based agent transfer configs - End
 
   include_contents: Literal['default', 'none'] = 'default'
@@ -609,6 +625,8 @@ class LlmAgent(BaseAgent):
       agent.disallow_transfer_to_parent = config.disallow_transfer_to_parent
     if config.disallow_transfer_to_peers:
       agent.disallow_transfer_to_peers = config.disallow_transfer_to_peers
+    if config.fallback_to_parent:
+      agent.fallback_to_parent = config.fallback_to_parent
     if config.include_contents != 'default':
       agent.include_contents = config.include_contents
     if config.input_schema:
