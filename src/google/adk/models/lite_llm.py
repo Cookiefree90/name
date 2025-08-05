@@ -279,6 +279,13 @@ def _get_content(
                 type="file", file={"file_data": data_uri, "format": "pdf"}
             )
         )
+      elif part.inline_data.mime_type == "text/plain":
+        content_objects.append(
+            ChatCompletionFileObject(
+                type="file",
+                file={"file_data": data_uri, "format": "text/plain"},
+            )
+        )
       else:
         raise ValueError("LiteLlm(BaseLlm) does not support this content part.")
 
