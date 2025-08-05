@@ -35,6 +35,8 @@ class LlmResponse(BaseModel):
       stream. Only used for streaming mode and when the content is plain text.
     turn_complete: Indicates whether the response from the model is complete.
       Only used for streaming mode.
+    generation_complete: Indicates that the model has finished generating content.
+      Only used for streaming mode.
     error_code: Error code if the response is an error. Code varies by model.
     error_message: Error message if the response is an error.
     interrupted: Flag indicating that LLM was interrupted when generating the
@@ -64,6 +66,11 @@ class LlmResponse(BaseModel):
   turn_complete: Optional[bool] = None
   """Indicates whether the response from the model is complete.
 
+  Only used for streaming mode.
+  """
+
+  generation_complete: Optional[bool] = None
+  """Indicates that the model has finished generating content.
   Only used for streaming mode.
   """
 

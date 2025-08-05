@@ -140,10 +140,37 @@ class GeminiLlmConnection(BaseLlmConnection):
     Yields:
       LlmResponse: The model response.
     """
-
     text = ''
+    user_text = ''
     async for message in self._gemini_session.receive():
       logger.debug('Got LLM Live message: %s', message)
+
+      model_turn_has_content = False
+      if message.server_content and message.server_content.model_turn:
+        content = message.server_content.model_turn
+        if content and content.parts:
+          model_turn_has_content = any(
+              p.text or p.inline_data for p in content.parts
+          )
+
+      model_is_replying = (
+          message.tool_call
+          or (
+              message.server_content
+              and message.server_content.output_transcription
+          )
+          or model_turn_has_content
+      )
+
+      if user_text and model_is_replying:
+        yield LlmResponse(
+            content=types.Content(
+                role='user',
+                parts=[types.Part.from_text(text=user_text)],
+            )
+        )
+        user_text = ''
+
       if message.server_content:
         content = message.server_content.model_turn
         if content and content.parts:
@@ -152,6 +179,8 @@ class GeminiLlmConnection(BaseLlmConnection):
           )
           if content.parts[0].text:
             text += content.parts[0].text
+            llm_response.partial = True
+          if content.parts[0].inline_data:
             llm_response.partial = True
           # don't yield the merged text event when receiving audio data
           elif text and not content.parts[0].inline_data:
@@ -162,14 +191,15 @@ class GeminiLlmConnection(BaseLlmConnection):
             message.server_content.input_transcription
             and message.server_content.input_transcription.text
         ):
-          user_text = message.server_content.input_transcription.text
+          user_text_fragment = message.server_content.input_transcription.text
+          user_text += user_text_fragment
           parts = [
               types.Part.from_text(
-                  text=user_text,
+                  text=user_text_fragment,
               )
           ]
           llm_response = LlmResponse(
-              content=types.Content(role='user', parts=parts)
+              content=types.Content(role='user', parts=parts), partial=True
           )
           yield llm_response
         if (
@@ -202,6 +232,21 @@ class GeminiLlmConnection(BaseLlmConnection):
               turn_complete=True, interrupted=message.server_content.interrupted
           )
           break
+        if message.server_content.generation_complete:
+          if text:
+            yield self.__build_full_text_response(text)
+            text = ''
+          #yield LlmResponse(generation_complete=True, partial=True)
+          yield LlmResponse(
+              content=types.Content(
+                  role='model',
+                  parts=[
+                      types.Part.from_text(text='[SYSTEM] Hand off to second agent')
+                  ],
+              ),
+              generation_complete=True,
+              partial = True 
+          )
         # in case of empty content or parts, we sill surface it
         # in case it's an interrupted message, we merge the previous partial
         # text. Other we don't merge. because content can be none when model
