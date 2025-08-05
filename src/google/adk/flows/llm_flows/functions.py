@@ -199,11 +199,25 @@ async def _execute_single_function_call_async(
     agent: LlmAgent,
 ) -> Optional[Event]:
   """Execute a single function call with thread safety for state modifications."""
-  tool, tool_context = _get_tool_and_context(
-      invocation_context,
-      function_call,
-      tools_dict,
-  )
+  try:
+      tool, tool_context = _get_tool_and_context(
+          invocation_context,
+          function_call,
+          tools_dict,
+      )
+  except ValueError as e:
+      part = types.Part.from_function_response(
+          name=function_call.name,
+          response={"result": str(e)}
+      )
+      part.function_response.id = function_call.id
+      return Event(invocation_id=invocation_context.invocation_id,
+                   author=invocation_context.agent.name,
+                   content=types.Content(
+                       role='user',
+                       parts=[part],
+                   ),
+                   branch=invocation_context.branch)
 
   with tracer.start_as_current_span(f'execute_tool {tool.name}'):
     # Do not use "args" as the variable name, because it is a reserved keyword
