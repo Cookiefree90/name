@@ -307,6 +307,7 @@ def to_agent_engine(
       values of `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION` will be
       overridden by `project` and `region` if they are specified.
   """
+  ADK_APP_OBJECT_NAME = 'adk_app'
   app_name = os.path.basename(agent_folder)
   agent_src_path = os.path.join(temp_folder, app_name)
   # remove agent_src_path if it exists
@@ -386,15 +387,22 @@ def to_agent_engine(
     )
     click.echo('Vertex AI initialized.')
 
-    adk_app_file = os.path.join(temp_folder, f'{adk_app}.py')
-    with open(adk_app_file, 'w', encoding='utf-8') as f:
-      f.write(
-          _AGENT_ENGINE_APP_TEMPLATE.format(
-              app_name=app_name,
-              trace_to_cloud_option=trace_to_cloud,
-          )
-      )
-    click.echo(f'Created {adk_app_file}')
+    click.echo(f'Using adk_app: {adk_app}')
+
+    if not os.path.exists(os.path.join(agent_src_path,f"{adk_app}.py")):
+      adk_app_file = os.path.join(temp_folder, f'{adk_app}.py')
+      with open(adk_app_file, 'w', encoding='utf-8') as f:
+        f.write(
+            _AGENT_ENGINE_APP_TEMPLATE.format(
+                app_name=app_name,
+                trace_to_cloud_option=trace_to_cloud,
+            )
+        )
+      click.echo(f'Created {adk_app_file}')
+    else:
+      shutil.copy(os.path.join(agent_src_path,f"{adk_app}.py"), temp_folder)
+      click.echo(f'Using existing {adk_app}.py')
+
     click.echo('Files and dependencies resolved')
     if absolutize_imports:
       for root, _, files in os.walk(agent_src_path):
@@ -415,7 +423,7 @@ def to_agent_engine(
     click.echo('Deploying to agent engine...')
     agent_engine = agent_engines.ModuleAgent(
         module_name=adk_app,
-        agent_name='adk_app',
+        agent_name=ADK_APP_OBJECT_NAME,
         register_operations={
             '': [
                 'get_session',

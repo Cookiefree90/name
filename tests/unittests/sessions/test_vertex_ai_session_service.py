@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import re
-import this
 from typing import Any
 from typing import List
 from typing import Optional
@@ -27,6 +26,7 @@ from google.adk.sessions.session import Session
 from google.adk.sessions.vertex_ai_session_service import VertexAiSessionService
 from google.genai import types
 import pytest
+import this
 
 MOCK_SESSION_JSON_1 = {
     'name': (
