@@ -12,24 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base_retrieval_tool import BaseRetrievalTool
-from .files_retrieval import FilesRetrieval
-from .llama_index_retrieval import LlamaIndexRetrieval
+import logging
 
-__all__ = [
-    'BaseRetrievalTool',
-    'FilesRetrieval',
-    'LlamaIndexRetrieval',
-]
+from .base_retrieval_tool import BaseRetrievalTool
+
+__all__ = ['BaseRetrievalTool']
+logger = logging.getLogger('google_adk.' + __name__)
+
+try:
+  from .files_retrieval import FilesRetrieval
+  from .llama_index_retrieval import LlamaIndexRetrieval
+
+  __all__.extend(['FilesRetrieval', 'LlamaIndexRetrieval'])
+except ImportError:
+  logger.debug(
+      'The `llama-index-core` package is not installed. Please install it to '
+      'use LlamaIndex with agents, otherwise you can ignore this warning.'
+  )
 
 try:
   from .vertex_ai_rag_retrieval import VertexAiRagRetrieval
 
   __all__.append('VertexAiRagRetrieval')
 except ImportError:
-  import logging
-
-  logger = logging.getLogger('google_adk.' + __name__)
   logger.debug(
       'The Vertex sdk is not installed. If you want to use the Vertex RAG with'
       ' agents, please install it. If not, you can ignore this warning.'
