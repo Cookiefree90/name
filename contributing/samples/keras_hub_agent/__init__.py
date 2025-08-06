@@ -12,25 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Defines the interface to support a model."""
+"""KerasHub Agent Sample.
 
-from .base_llm import BaseLlm
-from .google_llm import Gemini
-from .keras_llm import KerasLlm
-from .llm_request import LlmRequest
-from .llm_response import LlmResponse
-from .registry import LLMRegistry
+This sample demonstrates how to use KerasHub for local model inference
+with Google ADK. The agent runs completely offline without requiring
+any external API calls.
 
-__all__ = [
-    'BaseLlm',
-    'Gemini',
-    'KerasLlm',
-    'LLMRegistry',
-]
+Example usage:
+    python -m contributing.samples.keras_hub_agent.main
+"""
 
+from .agent import keras_hub_agent
 
-for regex in Gemini.supported_models():
-  LLMRegistry.register(Gemini)
-
-for regex in KerasLlm.supported_models():
-  LLMRegistry.register(KerasLlm)
+__all__ = ["keras_hub_agent"] 
