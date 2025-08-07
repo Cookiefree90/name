@@ -71,6 +71,19 @@ pip install git+https://github.com/google/adk-python.git@main
 
 Note: The development version is built directly from the latest code commits. While it includes the newest fixes and features, it may also contain experimental changes or bugs not present in the stable release. Use it primarily for testing upcoming changes or accessing critical fixes before they are officially released.
 
+### 💡 Windows Setup Tip
+
+For Windows users, it's recommended to use a virtual environment to avoid dependency conflicts:
+
+```cmd
+# Create and activate virtual environment
+python -m venv .venv
+.venv\Scripts\activate.bat
+
+# Then install ADK
+pip install google-adk
+```
+
 ## 📚 Documentation
 
 Explore the full documentation for detailed guides on building, evaluating, and
