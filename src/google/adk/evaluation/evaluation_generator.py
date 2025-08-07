@@ -24,11 +24,11 @@ from pydantic import BaseModel
 from ..agents.llm_agent import Agent
 from ..artifacts.base_artifact_service import BaseArtifactService
 from ..artifacts.in_memory_artifact_service import InMemoryArtifactService
-from ..memory import BaseMemoryService, InMemoryMemoryService
+from ..memory.base_memory_service import BaseMemoryService
+from ..memory.in_memory_memory_service import InMemoryMemoryService
 from ..runners import Runner
 from ..sessions.base_session_service import BaseSessionService
 from ..sessions.in_memory_session_service import InMemorySessionService
-from ..memory.in_memory_memory_service import InMemoryMemoryService
 from ..sessions.session import Session
 from .eval_case import EvalCase
 from .eval_case import IntermediateData
