@@ -103,7 +103,7 @@ class KerasLlm(BaseLlm):
           f"Error: {e}"
       )
 
-    # Configure the sampler based on kwargs
+    # Configure the sampler using KerasHub's native samplers
     sampler = self._additional_args.get("sampler", "greedy")
     temperature = self._additional_args.get("temperature", 1.0)
 
@@ -119,6 +119,12 @@ class KerasLlm(BaseLlm):
       self._keras_model.compile(
           sampler=f"temperature(temperature={temperature})"
       )
+    elif sampler == "beam_search":
+      beam_size = self._additional_args.get("beam_size", 5)
+      self._keras_model.compile(sampler=f"beam_search(beam_size={beam_size})")
+    elif sampler == "nucleus":
+      nucleus_p = self._additional_args.get("nucleus_p", 0.9)
+      self._keras_model.compile(sampler=f"nucleus(nucleus_p={nucleus_p})")
     else:
       # Default to greedy sampling
       self._keras_model.compile(sampler="greedy")
@@ -188,19 +194,71 @@ class KerasLlm(BaseLlm):
   @classmethod
   @override
   def supported_models(cls) -> list[str]:
-    """Returns a list of supported models in regex for LlmRegistry."""
+    """Returns a list of supported models in regex for LlmRegistry.
+    
+    This is not exhaustive - KerasHub supports many more models dynamically.
+    These patterns cover the most common model families that are actually available.
+    """
     return [
+        # KerasHub prefix for explicit local model selection
         "keras/.*",
+        
+        # GPT Family (actual presets: gpt2_base_en, gpt2_large_en, etc.)
         "gpt2_.*_en",
-        "opt_.*_en",
         "gpt_neo_.*_en",
+        "gpt_neox_.*_en",
+        
+        # OPT Family
+        "opt_.*_en",
+        
+        # BLOOM Family
         "bloom_.*_en",
-        "llama_.*_en",
+        
+        # LLaMA Family (actual presets: llama2_7b_en, llama3_8b_en, etc.)
+        "llama2_.*_en",
+        "llama3_.*_en",
+        
+        # Gemma Family (actual presets: gemma2_27b_en, gemma2_2b_en, etc.)
         "gemma_.*_en",
         "gemma2_.*_en",
+        "gemma3_.*_en",
+        "shieldgemma_.*_en",
+        "code_gemma_.*_en",
+        
+        # BERT Family
         "bert_.*_en",
         "roberta_.*_en",
         "distilbert_.*_en",
+        "albert_.*_en",
+        "deberta_.*_en",
+        
+        # T5 Family
         "t5_.*_en",
         "flan_t5_.*_en",
+        "ul2_.*_en",
+        
+        # Modern Models (actually available)
+        "falcon_.*_en",
+        "mistral_.*_en",
+        "mixtral_.*_en",
+        "qwen_.*_en",
+        "qwen2_.*_en",
+        "qwen_moe_.*_en",
+        "phi3_.*_en",
+        
+        # Vision-Language Models (actually available)
+        "pali_gemma_.*_en",
+        "pali_gemma2_.*_en",
+        
+        # Audio Models (actually available)
+        "whisper_.*_en",
+        "moonshine_.*_en",
+        
+        # Text-to-Image Models (actually available)
+        "stable_diffusion_.*_en",
+        "flux_.*_en",
+        
+        # Generic patterns for any KerasHub model
+        ".*_en",  # Any English model
+        ".*_multi",  # Multilingual models
     ]
