@@ -55,15 +55,18 @@ def create_oauth2_session(
     if not hasattr(auth_scheme, "token_endpoint"):
       return None, None
     token_endpoint = auth_scheme.token_endpoint
-    scopes = auth_scheme.scopes
+    scopes = auth_scheme.scopes or []
   elif isinstance(auth_scheme, OAuth2):
-    if (
-        not auth_scheme.flows.authorizationCode
-        or not auth_scheme.flows.authorizationCode.tokenUrl
-    ):
+    # Handle client credentials flow
+    if auth_scheme.flows.clientCredentials:
+      token_endpoint = auth_scheme.flows.clientCredentials.tokenUrl
+      scopes = list(auth_scheme.flows.clientCredentials.scopes.keys()) if auth_scheme.flows.clientCredentials.scopes else []
+    # Handle authorization code flow  
+    elif auth_scheme.flows.authorizationCode:
+      token_endpoint = auth_scheme.flows.authorizationCode.tokenUrl
+      scopes = list(auth_scheme.flows.authorizationCode.scopes.keys()) if auth_scheme.flows.authorizationCode.scopes else []
+    else:
       return None, None
-    token_endpoint = auth_scheme.flows.authorizationCode.tokenUrl
-    scopes = list(auth_scheme.flows.authorizationCode.scopes.keys())
   else:
     return None, None
 
@@ -75,16 +78,28 @@ def create_oauth2_session(
   ):
     return None, None
 
-  return (
-      OAuth2Session(
-          auth_credential.oauth2.client_id,
-          auth_credential.oauth2.client_secret,
-          scope=" ".join(scopes),
-          redirect_uri=auth_credential.oauth2.redirect_uri,
-          state=auth_credential.oauth2.state,
-      ),
-      token_endpoint,
-  )
+  # For client credentials flow, we don't need redirect_uri or state
+  if isinstance(auth_scheme, OAuth2) and auth_scheme.flows.clientCredentials:
+    return (
+        OAuth2Session(
+            auth_credential.oauth2.client_id,
+            auth_credential.oauth2.client_secret,
+            scope=" ".join(scopes),
+        ),
+        token_endpoint,
+    )
+  else:
+    # For authorization code flow, include redirect_uri and state
+    return (
+        OAuth2Session(
+            auth_credential.oauth2.client_id,
+            auth_credential.oauth2.client_secret,
+            scope=" ".join(scopes),
+            redirect_uri=auth_credential.oauth2.redirect_uri,
+            state=auth_credential.oauth2.state,
+        ),
+        token_endpoint,
+    )
 
 
 @experimental
@@ -97,11 +112,24 @@ def update_credential_with_tokens(
       auth_credential: The authentication credential to update.
       tokens: The OAuth2Token object containing new token information.
   """
-  auth_credential.oauth2.access_token = tokens.get("access_token")
-  auth_credential.oauth2.refresh_token = tokens.get("refresh_token")
-  auth_credential.oauth2.expires_at = (
-      int(tokens.get("expires_at")) if tokens.get("expires_at") else None
-  )
-  auth_credential.oauth2.expires_in = (
-      int(tokens.get("expires_in")) if tokens.get("expires_in") else None
-  )
+  if not auth_credential.oauth2:
+    return
+    
+  # Cast token values to appropriate types
+  access_token = tokens.get("access_token")
+  auth_credential.oauth2.access_token = str(access_token) if access_token else None
+  
+  refresh_token = tokens.get("refresh_token")
+  auth_credential.oauth2.refresh_token = str(refresh_token) if refresh_token else None
+  
+  expires_at = tokens.get("expires_at")
+  try:
+    auth_credential.oauth2.expires_at = int(expires_at) if expires_at is not None else None
+  except (ValueError, TypeError):
+    auth_credential.oauth2.expires_at = None
+  
+  expires_in = tokens.get("expires_in")
+  try:
+    auth_credential.oauth2.expires_in = int(expires_in) if expires_in is not None else None
+  except (ValueError, TypeError):
+    auth_credential.oauth2.expires_in = None

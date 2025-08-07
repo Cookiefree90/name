@@ -385,6 +385,28 @@
 * Added unit test coverage for local_eval_sets_manager.py ([174afb3](https://github.com/google/adk-python/commit/174afb3975bdc7e5f10c26f3eebb17d2efa0dd59))
 * Extract common options for `adk web` and `adk api_server` ([01965bd](https://github.com/google/adk-python/commit/01965bdd74a9dbdb0ce91a924db8dee5961478b8))
 
+## [Unreleased]
+
+### Added
+- **OAuth2 Client Credentials Flow Support**: Added comprehensive support for OAuth2 client credentials flow across ADK authentication infrastructure
+  - Enhanced `OAuth2CredentialExchanger` to detect and handle client credentials flow automatically
+  - Updated `OAuth2CredentialRefresher` to properly refresh client credentials tokens (by re-exchange)
+  - Improved `create_oauth2_session` utility to support client credentials session creation
+  - Enhanced `OAuthGrantType.from_flow()` method with better flow detection and documentation
+  - MCPToolset now supports OAuth2 client credentials authentication out-of-the-box
+  - Added comprehensive unit tests for client credentials functionality
+  - Added example usage in MCP stdio server agent sample
+
+### Changed
+- `OAuth2CredentialExchanger.exchange()` now supports both authorization code and client credentials flows
+- `OAuth2CredentialRefresher.refresh()` automatically detects grant type and uses appropriate refresh strategy
+- `OAuthGrantType.from_flow()` return type changed to `Optional[OAuthGrantType]` for better type safety
+
+### Technical Details
+- Client credentials flow prioritized over authorization code when both are configured
+- Automatic token exchange without user interaction for machine-to-machine authentication
+- Proper error handling and fallback for unsupported or misconfigured flows
+
 ## 1.1.1
 
 ### Features

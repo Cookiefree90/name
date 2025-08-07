@@ -84,14 +84,23 @@ class MCPTool(BaseAuthenticatedTool):
     Raises:
         ValueError: If mcp_tool or mcp_session_manager is None.
     """
+    logger.debug(f"🔧 MCPTool.__init__() called for '{mcp_tool.name}'")
+    logger.debug(f"🔍 auth_scheme provided: {auth_scheme is not None}")
+    logger.debug(f"🔍 auth_credential provided: {auth_credential is not None}")
+    
+    auth_config = None
+    if auth_scheme:
+      auth_config = AuthConfig(
+          auth_scheme=auth_scheme, raw_auth_credential=auth_credential
+      )
+      logger.debug("✅ Created AuthConfig - CredentialManager will be initialized")
+    else:
+      logger.warning("❌ No auth_scheme provided - no CredentialManager will be created")
+    
     super().__init__(
         name=mcp_tool.name,
         description=mcp_tool.description if mcp_tool.description else "",
-        auth_config=AuthConfig(
-            auth_scheme=auth_scheme, raw_auth_credential=auth_credential
-        )
-        if auth_scheme
-        else None,
+        auth_config=auth_config,
     )
     self._mcp_tool = mcp_tool
     self._mcp_session_manager = mcp_session_manager

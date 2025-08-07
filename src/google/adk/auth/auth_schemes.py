@@ -50,16 +50,32 @@ class OAuthGrantType(str, Enum):
   PASSWORD = "password"
 
   @staticmethod
-  def from_flow(flow: OAuthFlows) -> "OAuthGrantType":
-    """Converts an OAuthFlows object to a OAuthGrantType."""
+  def from_flow(flow: OAuthFlows) -> Optional["OAuthGrantType"]:
+    """Converts an OAuthFlows object to a OAuthGrantType.
+    
+    Determines the OAuth2 grant type based on which flow is configured
+    in the OAuthFlows object. Prioritizes client credentials as it's the
+    most specific flow for machine-to-machine authentication.
+    
+    Args:
+        flow: The OAuthFlows object containing flow configurations.
+        
+    Returns:
+        The corresponding OAuthGrantType, or None if no recognized flow is found.
+    """
+    # Prioritize client credentials for machine-to-machine authentication
     if flow.clientCredentials:
       return OAuthGrantType.CLIENT_CREDENTIALS
+    # Authorization code flow for interactive user authentication
     if flow.authorizationCode:
       return OAuthGrantType.AUTHORIZATION_CODE
+    # Implicit flow (less secure, deprecated in OAuth 2.1)
     if flow.implicit:
       return OAuthGrantType.IMPLICIT
+    # Password flow (not recommended for security reasons)
     if flow.password:
       return OAuthGrantType.PASSWORD
+    # No recognized flow found
     return None
 
 

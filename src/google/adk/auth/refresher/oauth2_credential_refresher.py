@@ -20,8 +20,10 @@ import json
 import logging
 from typing import Optional
 
+from fastapi.openapi.models import OAuth2
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_schemes import AuthScheme
+from google.adk.auth.auth_schemes import OAuthGrantType
 from google.adk.auth.oauth2_credential_util import create_oauth2_session
 from google.adk.auth.oauth2_credential_util import update_credential_with_tokens
 from google.adk.utils.feature_decorator import experimental
@@ -99,28 +101,77 @@ class OAuth2CredentialRefresher(BaseCredentialRefresher):
       if not auth_credential.oauth2:
         return auth_credential
 
+      # Check if token is expired
       if OAuth2Token({
           "expires_at": auth_credential.oauth2.expires_at,
           "expires_in": auth_credential.oauth2.expires_in,
       }).is_expired():
-        client, token_endpoint = create_oauth2_session(
-            auth_scheme, auth_credential
-        )
-        if not client:
-          logger.warning("Could not create OAuth2 session for token refresh")
+        
+        # Determine the OAuth2 flow type
+        grant_type = self._get_grant_type(auth_scheme)
+        
+        if grant_type == OAuthGrantType.CLIENT_CREDENTIALS:
+          return await self._refresh_client_credentials(auth_credential, auth_scheme)
+        elif grant_type == OAuthGrantType.AUTHORIZATION_CODE:
+          return await self._refresh_authorization_code(auth_credential, auth_scheme)
+        else:
+          logger.warning(f"Unsupported OAuth2 grant type for refresh: {grant_type}")
           return auth_credential
 
-        try:
-          tokens = client.refresh_token(
-              url=token_endpoint,
-              refresh_token=auth_credential.oauth2.refresh_token,
-          )
-          update_credential_with_tokens(auth_credential, tokens)
-          logger.debug("Successfully refreshed OAuth2 tokens")
-        except Exception as e:
-          # TODO reconsider whether we should raise error when refresh failed.
-          logger.error("Failed to refresh OAuth2 tokens: %s", e)
-          # Return original credential on failure
-          return auth_credential
+    return auth_credential
+
+  def _get_grant_type(self, auth_scheme: AuthScheme) -> Optional[OAuthGrantType]:
+    """Determine the OAuth2 grant type from the auth scheme."""
+    if isinstance(auth_scheme, OAuth2) and auth_scheme.flows:
+      return OAuthGrantType.from_flow(auth_scheme.flows)
+    return None
+
+  async def _refresh_client_credentials(
+      self, 
+      auth_credential: AuthCredential, 
+      auth_scheme: AuthScheme
+  ) -> AuthCredential:
+    """Refresh client credentials by getting a new token (no refresh tokens in client credentials flow)."""
+    
+    # For client credentials, "refresh" means getting a new token
+    # Import here to avoid circular imports
+    from ..exchanger.oauth2_credential_exchanger import OAuth2CredentialExchanger
+    
+    try:
+      exchanger = OAuth2CredentialExchanger()
+      # Clear the access token to force re-exchange
+      if auth_credential.oauth2:
+        auth_credential.oauth2.access_token = None
+      return await exchanger.exchange(auth_credential, auth_scheme)
+    except Exception as e:
+      logger.error("Failed to refresh OAuth2 client credentials: %s", e)
+      return auth_credential
+
+  async def _refresh_authorization_code(
+      self, 
+      auth_credential: AuthCredential, 
+      auth_scheme: AuthScheme
+  ) -> AuthCredential:
+    """Refresh authorization code credentials using refresh token."""
+    
+    client, token_endpoint = create_oauth2_session(
+        auth_scheme, auth_credential
+    )
+    if not client:
+      logger.warning("Could not create OAuth2 session for token refresh")
+      return auth_credential
+
+    try:
+      tokens = client.refresh_token(
+          url=token_endpoint,
+          refresh_token=auth_credential.oauth2.refresh_token if auth_credential.oauth2 else None,
+      )
+      update_credential_with_tokens(auth_credential, tokens)
+      logger.debug("Successfully refreshed OAuth2 authorization code tokens")
+    except Exception as e:
+      # TODO reconsider whether we should raise error when refresh failed.
+      logger.error("Failed to refresh OAuth2 authorization code tokens: %s", e)
+      # Return original credential on failure
+      return auth_credential
 
     return auth_credential

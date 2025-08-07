@@ -12,11 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""Auth configurations for Google ADK."""
+
 from .auth_credential import AuthCredential
 from .auth_credential import AuthCredentialTypes
 from .auth_credential import OAuth2Auth
+from .auth_credential import ServiceAccount
 from .auth_handler import AuthHandler
 from .auth_schemes import AuthScheme
-from .auth_schemes import AuthSchemeType
+from .auth_schemes import OAuthGrantType
 from .auth_schemes import OpenIdConnectWithConfig
-from .auth_tool import AuthConfig
+from .credential_manager import CredentialManager
+
+# OAuth discovery utilities - imported conditionally to avoid circular imports
+try:
+    from .oauth2_discovery_util import create_oauth_scheme_from_discovery
+    _discovery_available = True
+except ImportError:
+    _discovery_available = False
+
+__all__ = [
+    "AuthCredential",
+    "AuthCredentialTypes",
+    "AuthHandler",
+    "AuthScheme",
+    "CredentialManager",
+    "OAuthGrantType",
+    "OAuth2Auth",
+    "OpenIdConnectWithConfig", 
+    "ServiceAccount",
+]
+
+# Add discovery utilities to __all__ if available
+if _discovery_available:
+    __all__.extend([
+        "create_oauth_scheme_from_discovery",
+    ])
