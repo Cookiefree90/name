@@ -26,6 +26,7 @@ from .get_user_choice_tool import get_user_choice_tool as get_user_choice
 from .google_search_tool import google_search
 from .load_artifacts_tool import load_artifacts_tool as load_artifacts
 from .load_memory_tool import load_memory_tool as load_memory
+from .load_web_page import load_web_page as load_web_page_func
 from .long_running_tool import LongRunningFunctionTool
 from .preload_memory_tool import preload_memory_tool as preload_memory
 from .tool_context import ToolContext
@@ -52,6 +53,7 @@ __all__ = [
     'preload_memory',
     'ToolContext',
     'transfer_to_agent',
+    'load_web_page_func',
 ]
 
 
