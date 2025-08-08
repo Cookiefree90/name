@@ -148,7 +148,7 @@ class Gemini(BaseLlm):
         if (
             llm_response.content
             and llm_response.content.parts
-            and llm_response.content.parts[0].text
+            and llm_response.content.parts[0].text is not None
         ):
           part0 = llm_response.content.parts[0]
           if part0.thought:
