@@ -77,7 +77,6 @@ class BaseToolset(ABC):
       list[BaseTool]: A list of tools available under the specified context.
     """
 
-  @abstractmethod
   async def close(self) -> None:
     """Performs cleanup and releases resources held by the toolset.
 
@@ -87,6 +86,7 @@ class BaseToolset(ABC):
       should ensure that any open connections, files, or other managed
       resources are properly released to prevent leaks.
     """
+    pass
 
   def _is_tool_selected(
       self, tool: BaseTool, readonly_context: ReadonlyContext
