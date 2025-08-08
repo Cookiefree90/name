@@ -111,7 +111,7 @@ class SheetsToolset(GoogleApiToolset):
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       service_account: Optional[ServiceAccount] = None,
   ):
-    super().__init__("sheets", "v4", client_id, client_secret, tool_filter)
+    super().__init__("sheets", "v4", client_id, client_secret, tool_filter, service_account)
 
 
 class DocsToolset(GoogleApiToolset):
