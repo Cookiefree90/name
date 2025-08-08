@@ -244,17 +244,9 @@ def _get_contents(
         else event
     )
 
-  # Rearrange events for proper function call/response pairing
-  result_events = _rearrange_events_for_latest_function_response(
-      filtered_events
-  )
-  result_events = _rearrange_events_for_async_function_responses_in_history(
-      result_events
-  )
-
   # Convert events to contents
   contents = []
-  for event in result_events:
+  for event in filtered_events:
     content = copy.deepcopy(event.content)
     remove_client_function_call_id(content)
     contents.append(content)
