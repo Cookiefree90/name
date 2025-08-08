@@ -53,6 +53,7 @@ from litellm import OpenAIMessageContent
 from pydantic import BaseModel
 from pydantic import Field
 from typing_extensions import override
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from .base_llm import BaseLlm
 from .llm_request import LlmRequest
@@ -86,7 +87,19 @@ class UsageMetadataChunk(BaseModel):
 
 class LiteLLMClient:
   """Provides acompletion method (for better testability)."""
-
+  @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=3),
+        retry=retry_if_exception_type(
+            (
+                litellm.exceptions.APIError,
+                litellm.exceptions.Timeout,
+                litellm.exceptions.ServiceUnavailableError,
+                litellm.exceptions.RateLimitError,
+            )
+        ),
+        reraise=True,
+    )
   async def acompletion(
       self, model, messages, tools, **kwargs
   ) -> Union[ModelResponse, CustomStreamWrapper]:
