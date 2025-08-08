@@ -77,6 +77,15 @@ class Event(LlmResponse):
   conversation history.
   """
 
+  sequence_id: Optional[int] = None
+  """The sequence id of the event."""
+
+  # TODO: we can support continuous range if we are certain the range is always continous
+  #       or discrete items if we want to support non-continuous range.
+  #       The sequence ID range of the events that are summarized, in the form(start_sequence_id, end_sequence_id)`
+  summary_range: Optional[tuple[int, int]] = None
+  """The range of events to summarize."""
+
   # The following are computed fields.
   # Do not assign the ID. It will be assigned by the session.
   id: str = ''
