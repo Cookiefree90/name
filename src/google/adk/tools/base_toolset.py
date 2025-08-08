@@ -58,9 +58,37 @@ class BaseToolset(ABC):
   """
 
   def __init__(
-      self, *, tool_filter: Optional[Union[ToolPredicate, List[str]]] = None
+      self,
+      *,
+      tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
+      add_tool_name_prefix: bool = False,
+      tool_name_prefix: Optional[str] = None,
   ):
+    """Initialize the toolset.
+
+    Args:
+      tool_filter: Filter to apply to tools.
+      add_tool_name_prefix: Whether to add prefix to tool names. Defaults to False.
+      tool_name_prefix: Custom prefix for tool names. If not provided and
+        add_tool_name_prefix is True, uses the toolset class name (lowercased, without
+        'toolset' suffix) as the default prefix.
+    """
     self.tool_filter = tool_filter
+    self.add_tool_name_prefix = add_tool_name_prefix
+    self._tool_name_prefix = tool_name_prefix
+
+  @property
+  def tool_name_prefix(self) -> str:
+    """Get the prefix for tool names.
+
+    Returns:
+      The custom prefix if provided, otherwise the toolset class name
+      (lowercased).
+    """
+    if self._tool_name_prefix is not None:
+      return self._tool_name_prefix
+
+    return self.__class__.__name__.lower()
 
   @abstractmethod
   async def get_tools(
@@ -76,6 +104,52 @@ class BaseToolset(ABC):
     Returns:
       list[BaseTool]: A list of tools available under the specified context.
     """
+
+  async def get_prefixed_tools(
+      self,
+      readonly_context: Optional[ReadonlyContext] = None,
+  ) -> list[BaseTool]:
+    """Return all tools with optional prefix applied to tool names.
+
+    This method calls get_tools() and applies prefixing if add_tool_name_prefix is True.
+
+    Args:
+      readonly_context (ReadonlyContext, optional): Context used to filter tools
+        available to the agent. If None, all tools in the toolset are returned.
+
+    Returns:
+      list[BaseTool]: A list of tools with prefixed names if add_tool_name_prefix is True.
+    """
+    tools = await self.get_tools(readonly_context)
+
+    if not self.add_tool_name_prefix:
+      return tools
+
+    prefix = self.tool_name_prefix
+
+    for tool in tools:
+
+      prefixed_name = f"{prefix}_{tool.name}"
+      tool.name = prefixed_name
+
+      # Also update the function declaration name if the tool has one
+      # Use default parameters to capture the current values in the closure
+      def _create_prefixed_declaration(
+          original_get_declaration=tool._get_declaration,
+          prefixed_name=prefixed_name,
+      ):
+        def _get_prefixed_declaration():
+          declaration = original_get_declaration()
+          if declaration is not None:
+            declaration.name = prefixed_name
+            return declaration
+          return None
+
+        return _get_prefixed_declaration
+
+      tool._get_declaration = _create_prefixed_declaration()
+
+    return tools
 
   @abstractmethod
   async def close(self) -> None:
