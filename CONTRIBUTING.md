@@ -213,4 +213,4 @@ information on using pull requests.
 
 # Vibe Coding
 
-If you want to contribute by leveraging viber coding, the AGENTS.md (https://github.com/google/adk-python/tree/main/AGENTS.md) could be used as context to your LLM.
+If you want to contribute by leveraging vibe coding, the AGENTS.md (https://github.com/google/adk-python/tree/main/AGENTS.md) is available for context to your LLM.
