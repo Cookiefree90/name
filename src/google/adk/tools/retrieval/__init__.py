@@ -13,20 +13,20 @@
 # limitations under the License.
 
 from .base_retrieval_tool import BaseRetrievalTool
-from .files_retrieval import FilesRetrieval
-from .llama_index_retrieval import LlamaIndexRetrieval
 
 __all__ = [
     'BaseRetrievalTool',
-    'FilesRetrieval',
-    'LlamaIndexRetrieval',
-    'VertexAiRagRetrieval',
 ]
-
 
 def __getattr__(name: str):
   if name == 'VertexAiRagRetrieval':
     from .vertex_ai_rag_retrieval import VertexAiRagRetrieval
-
     return VertexAiRagRetrieval
+  if name == 'FilesRetrieval':
+    from .files_retrieval import FilesRetrieval
+    return FilesRetrieval
+  if name == 'LlamaIndexRetrieval':
+    from .llama_index_retrieval import LlamaIndexRetrieval
+    return LlamaIndexRetrieval
+  
   raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
