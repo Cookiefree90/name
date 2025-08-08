@@ -21,6 +21,7 @@ from typing import Union
 
 from fastapi.openapi.models import HTTPBearer
 from typing_extensions import override
+import requests
 
 from ...agents.readonly_context import ReadonlyContext
 from ...auth.auth_credential import AuthCredential
@@ -98,6 +99,7 @@ class ApplicationIntegrationToolset(BaseToolset):
       auth_scheme: Optional[AuthScheme] = None,
       auth_credential: Optional[AuthCredential] = None,
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
+      session: Optional[requests.Session] = None,
   ):
     """Args:
 
@@ -117,6 +119,7 @@ class ApplicationIntegrationToolset(BaseToolset):
         tool_filter: The filter used to filter the tools in the toolset. It can
           be either a tool predicate or a list of tool names of the tools to
           expose.
+        session: Optional requests.Session to use for making HTTP requests.
 
     Raises:
         ValueError: If none of the following conditions are met:
@@ -169,9 +172,9 @@ class ApplicationIntegrationToolset(BaseToolset):
       )
     self._openapi_toolset = None
     self._tools = []
-    self._parse_spec_to_toolset(spec, connection_details)
+    self._parse_spec_to_toolset(spec, connection_details, session)
 
-  def _parse_spec_to_toolset(self, spec_dict, connection_details):
+  def _parse_spec_to_toolset(self, spec_dict, connection_details, session):
     """Parses the spec dict to OpenAPI toolset."""
     if self._service_account_json:
       sa_credential = ServiceAccountCredential.model_validate_json(
@@ -200,6 +203,7 @@ class ApplicationIntegrationToolset(BaseToolset):
           auth_credential=auth_credential,
           auth_scheme=auth_scheme,
           tool_filter=self.tool_filter,
+          session=session,
       )
       return
 
@@ -213,7 +217,7 @@ class ApplicationIntegrationToolset(BaseToolset):
         entity = getattr(open_api_operation.operation, "x-entity")
       elif hasattr(open_api_operation.operation, "x-action"):
         action = getattr(open_api_operation.operation, "x-action")
-      rest_api_tool = RestApiTool.from_parsed_operation(open_api_operation)
+      rest_api_tool = RestApiTool.from_parsed_operation(open_api_operation, session)
       if auth_scheme:
         rest_api_tool.configure_auth_scheme(auth_scheme)
       if auth_credential:

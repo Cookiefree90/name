@@ -86,6 +86,16 @@ def mock_openapi_toolset_with_multiple_tools_and_no_tools():
     yield mock_toolset
 
 
+@pytest.fixture
+def mock_session():
+  """Fixture for a mock session."""
+  mock_session = mock.MagicMock()
+  mock_response = mock.MagicMock()
+  mock_response.json.return_value = {"result": "mock_session"}
+  mock_session.request.return_value = mock_response
+  return mock_session
+  
+
 def get_mocked_parsed_operation(operation_id, attributes):
   mock_openapi_spec_parser_instance = mock.MagicMock()
   mock_parsed_operation = mock.MagicMock(spec=ParsedOperation)
@@ -179,17 +189,21 @@ def connection_details_auth_override_enabled():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("with_custom_session", [False, True], ids=["default", "custom"])
 async def test_initialization_with_integration_and_trigger(
     project,
     location,
     mock_integration_client,
     mock_connections_client,
     mock_openapi_toolset,
+    mock_session,
+    with_custom_session
 ):
   integration_name = "test-integration"
   triggers = ["test-trigger"]
+  test_session = mock_session if with_custom_session else None
   toolset = ApplicationIntegrationToolset(
-      project, location, integration=integration_name, triggers=triggers
+      project, location, integration=integration_name, triggers=triggers, session=test_session
   )
   mock_integration_client.assert_called_once_with(
       project, location, integration_name, triggers, None, None, None, None
@@ -200,6 +214,7 @@ async def test_initialization_with_integration_and_trigger(
   tools = await toolset.get_tools()
   assert len(tools) == 1
   assert tools[0].name == "Test Tool"
+  assert (mock_openapi_toolset.call_args[1]['session'] == mock_session) == with_custom_session
 
 
 @pytest.mark.asyncio
@@ -259,6 +274,7 @@ async def test_initialization_with_integration_and_empty_trigger_list(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("with_custom_session", [False, True], ids=["default", "custom"])
 async def test_initialization_with_connection_and_entity_operations(
     project,
     location,
@@ -266,6 +282,8 @@ async def test_initialization_with_connection_and_entity_operations(
     mock_connections_client,
     mock_openapi_entity_spec_parser,
     connection_details,
+    mock_session,
+    with_custom_session
 ):
   connection_name = "test-connection"
   entity_operations_list = ["list", "get"]
@@ -274,6 +292,7 @@ async def test_initialization_with_connection_and_entity_operations(
   mock_connections_client.return_value.get_connection_details.return_value = (
       connection_details
   )
+  test_session = mock_session if with_custom_session else None
   toolset = ApplicationIntegrationToolset(
       project,
       location,
@@ -281,6 +300,7 @@ async def test_initialization_with_connection_and_entity_operations(
       entity_operations=entity_operations_list,
       tool_name_prefix=tool_name,
       tool_instructions=tool_instructions,
+      session=test_session
   )
   mock_integration_client.assert_called_once_with(
       project,
@@ -308,6 +328,7 @@ async def test_initialization_with_connection_and_entity_operations(
   assert isinstance(tools[0], IntegrationConnectorTool)
   assert tools[0]._entity == "Issues"
   assert tools[0]._operation == "LIST_ENTITIES"
+  assert (tools[0]._rest_api_tool.session == mock_session) == with_custom_session
 
 
 @pytest.mark.asyncio

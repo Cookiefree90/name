@@ -23,6 +23,7 @@ from typing import List
 from typing import Literal
 from typing import Optional
 from typing import Union
+import requests
 
 from typing_extensions import override
 import yaml
@@ -68,6 +69,7 @@ class OpenAPIToolset(BaseToolset):
       auth_scheme: Optional[AuthScheme] = None,
       auth_credential: Optional[AuthCredential] = None,
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
+      session: Optional[requests.Session] = None,
   ):
     """Initializes the OpenAPIToolset.
 
@@ -102,11 +104,14 @@ class OpenAPIToolset(BaseToolset):
         ``google.adk.tools.openapi_tool.auth.auth_helpers``
       tool_filter: The filter used to filter the tools in the toolset. It can be
         either a tool predicate or a list of tool names of the tools to expose.
+        `google.adk.tools.openapi_tool.auth.auth_helpers`
+      session: Optional requests.Session to use for making API calls. If not provided, 
+        a new session will be created.
     """
     super().__init__(tool_filter=tool_filter)
     if not spec_dict:
       spec_dict = self._load_spec(spec_str, spec_str_type)
-    self._tools: Final[List[RestApiTool]] = list(self._parse(spec_dict))
+    self._tools: Final[List[RestApiTool]] = list(self._parse(spec_dict, session=session))
     if auth_scheme or auth_credential:
       self._configure_auth_all(auth_scheme, auth_credential)
 
@@ -148,13 +153,13 @@ class OpenAPIToolset(BaseToolset):
     else:
       raise ValueError(f"Unsupported spec type: {spec_type}")
 
-  def _parse(self, openapi_spec_dict: Dict[str, Any]) -> List[RestApiTool]:
+  def _parse(self, openapi_spec_dict: Dict[str, Any], session: Optional[requests.Session] = None) -> List[RestApiTool]:
     """Parse OpenAPI spec into a list of RestApiTool."""
     operations = OpenApiSpecParser().parse(openapi_spec_dict)
 
     tools = []
     for o in operations:
-      tool = RestApiTool.from_parsed_operation(o)
+      tool = RestApiTool.from_parsed_operation(o, session=session)
       logger.info("Parsed tool: %s", tool.name)
       tools.append(tool)
     return tools
