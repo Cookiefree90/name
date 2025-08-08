@@ -14,8 +14,8 @@
 
 from __future__ import annotations
 
+from google.cloud.aiplatform.vertexai import types as vertexai_types
 from typing_extensions import override
-from vertexai import types as vertexai_types
 
 from .eval_case import Invocation
 from .eval_metrics import EvalMetric

@@ -18,11 +18,11 @@ import math
 import os
 from typing import Optional
 
+from google.cloud.aiplatform.vertexai import Client as VertexAiClient
+from google.cloud.aiplatform.vertexai import types as vertexai_types
 from google.genai import types as genai_types
 import pandas as pd
 from typing_extensions import override
-from vertexai import Client as VertexAiClient
-from vertexai import types as vertexai_types
 
 from .eval_case import Invocation
 from .evaluator import EvalStatus
