@@ -68,7 +68,10 @@ def _create_decorator(
       @functools.wraps(orig_init)
       def new_init(self, *args, **kwargs):
         # Load .env file if dotenv is available
-        load_dotenv()
+        try:
+          load_dotenv()
+        except Exception:  # pylint: disable=broad-exception-caught
+          pass
 
         # Check if usage should be bypassed via environment variable at call time
         should_bypass = (
@@ -93,7 +96,10 @@ def _create_decorator(
       @functools.wraps(obj)
       def wrapper(*args, **kwargs):
         # Load .env file if dotenv is available
-        load_dotenv()
+        try:
+          load_dotenv()
+        except OSError:
+          pass
 
         # Check if usage should be bypassed via environment variable at call time
         should_bypass = (
