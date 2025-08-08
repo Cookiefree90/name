@@ -160,6 +160,11 @@ class AgentRunRequest(common.BaseModel):
   state_delta: Optional[dict[str, Any]] = None
 
 
+class CreateSessionRequest(common.BaseModel):
+  state: Optional[dict[str, Any]] = None
+  events: Optional[list[Event]] = None
+
+
 class AddSessionToEvalSetRequest(common.BaseModel):
   eval_id: str
   session_id: str
@@ -439,15 +444,16 @@ class AdkWebServer:
     async def create_session(
         app_name: str,
         user_id: str,
-        state: Optional[dict[str, Any]] = None,
-        events: Optional[list[Event]] = None,
+        req: Optional[CreateSessionRequest] = None,
     ) -> Session:
       session = await self.session_service.create_session(
-          app_name=app_name, user_id=user_id, state=state
+          app_name=app_name,
+          user_id=user_id,
+          state=req.state if req else None,
       )
 
-      if events:
-        for event in events:
+      if req and req.events:
+        for event in req.events:
           await self.session_service.append_event(session=session, event=event)
 
       logger.info("New session created")
