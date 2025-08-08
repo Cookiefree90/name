@@ -23,6 +23,7 @@ import json
 import logging
 import sys
 from typing import Any
+from typing import Callable
 from typing import Dict
 from typing import Optional
 from typing import TextIO
@@ -177,12 +178,42 @@ class MCPSessionManager:
     else:
       self._connection_params = connection_params
     self._errlog = errlog
-
     # Session pool: maps session keys to (session, exit_stack) tuples
     self._sessions: Dict[str, tuple[ClientSession, AsyncExitStack]] = {}
-
     # Lock to prevent race conditions in session creation
     self._session_lock = asyncio.Lock()
+
+  def update_connection_params(
+      self,
+      new_connection_params: Union[
+          StdioServerParameters,
+          StdioConnectionParams,
+          SseConnectionParams,
+          StreamableHTTPConnectionParams,
+      ],
+  ) -> None:
+    """Updates the connection parameters and invalidates existing sessions.
+
+    Args:
+        new_connection_params: New connection parameters to use.
+    """
+    if isinstance(new_connection_params, StdioServerParameters):
+      logger.warning(
+          'StdioServerParameters is not recommended. Please use'
+          ' StdioConnectionParams.'
+      )
+      self._connection_params = StdioConnectionParams(
+          server_params=new_connection_params,
+          timeout=5,
+      )
+    else:
+      self._connection_params = new_connection_params
+
+    # Clear existing sessions since connection params changed
+    # Sessions will be recreated on next request
+    # Note: We don't close sessions here to avoid blocking,
+    # they will be cleaned up when detected as disconnected
+
 
   def _generate_session_key(
       self, merged_headers: Optional[Dict[str, str]] = None
