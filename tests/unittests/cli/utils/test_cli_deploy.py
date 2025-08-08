@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import importlib
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -452,7 +453,7 @@ def test_to_agent_engine_happy_path(
   cli_deploy.to_agent_engine(
       agent_folder=str(src_dir),
       temp_folder=str(temp_folder),
-      adk_app="my_adk_app",
+      adk_app="agent_engine_app",
       staging_bucket="gs://my-staging-bucket",
       trace_to_cloud=True,
       project="my-gcp-project",
@@ -466,10 +467,113 @@ def test_to_agent_engine_happy_path(
   assert (temp_folder / app_name / "__init__.py").is_file()
 
   # 2. Verify adk_app.py creation
-  adk_app_path = temp_folder / "my_adk_app.py"
+  adk_app_path = temp_folder / f"agent_engine_app.py"
   assert adk_app_path.is_file()
   content = adk_app_path.read_text()
   assert f"from {app_name}.agent import root_agent" in content
+  assert "adk_app = AdkApp(" in content
+  assert "enable_tracing=True" in content
+
+  # 3. Verify requirements handling
+  reqs_path = temp_folder / app_name / "requirements.txt"
+  assert reqs_path.is_file()
+  if not has_reqs:
+    # It should have been created with the default content
+    assert "google-cloud-aiplatform[adk,agent_engines]" in reqs_path.read_text()
+
+  # 4. Verify Vertex AI SDK calls
+  vertexai = sys.modules["vertexai"]
+  vertexai.init.assert_called_once_with(
+      project="my-gcp-project",
+      location="us-central1",
+      staging_bucket="gs://my-staging-bucket",
+  )
+
+  # 5. Verify env var handling
+  dotenv = sys.modules["dotenv"]
+  if has_env:
+    dotenv.dotenv_values.assert_called_once()
+    expected_env_vars = {"FILE_VAR": "value"}
+  else:
+    dotenv.dotenv_values.assert_not_called()
+    expected_env_vars = None
+
+  # 6. Verify agent_engines.create call
+  vertexai.agent_engines.create.assert_called_once()
+  create_kwargs = vertexai.agent_engines.create.call_args.kwargs
+  assert create_kwargs["agent_engine"] == "mock-agent-engine-object"
+  assert create_kwargs["display_name"] == "My Test Agent"
+  assert create_kwargs["description"] == "A test agent."
+  assert create_kwargs["requirements"] == str(reqs_path)
+  assert create_kwargs["extra_packages"] == [str(temp_folder)]
+  assert create_kwargs["env_vars"] == expected_env_vars
+
+  # 7. Verify cleanup
+  assert str(rmtree_recorder.get_last_call_args()[0]) == str(temp_folder)
+
+
+@pytest.mark.usefixtures("mock_vertex_ai")
+@pytest.mark.parametrize("has_reqs", [True, False])
+@pytest.mark.parametrize("has_env", [True, False])
+def test_to_agent_engine_happy_path_custom_file(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+    tmp_path: Path,
+    has_reqs: bool,
+    has_env: bool,
+) -> None:
+  """
+  Tests the happy path for the `to_agent_engine` function.
+
+  Verifies:
+  1. Source files are copied.
+  2. `adk_app.py` is created correctly.
+  3. `requirements.txt` is handled (created if not present).
+  4. `.env` file is read if present.
+  5. `vertexai.init` and `agent_engines.create` are called with the correct args.
+  6. Cleanup is performed.
+  """
+  src_dir = agent_dir(has_reqs, has_env)
+  temp_folder = tmp_path / "build"
+  app_name = src_dir.name
+  rmtree_recorder = _Recorder()
+
+  monkeypatch.setattr(shutil, "rmtree", rmtree_recorder)
+  # Create a dummy adk_app.py file in the temp_folder
+  adk_app_content = """
+  from test.agent import root_agent
+  from vertexai.preview.reasoning_engines import AdkApp
+
+  adk_app = AdkApp(
+    agent=root_agent,
+    enable_tracing=True,
+  )
+  """
+  (src_dir / "my_adk_app.py").write_text(adk_app_content)
+
+  # Execute
+  cli_deploy.to_agent_engine(
+      agent_folder=str(src_dir),
+      temp_folder=str(temp_folder),
+      adk_app="my_adk_app",
+      staging_bucket="gs://my-staging-bucket",
+      trace_to_cloud=True,
+      project="my-gcp-project",
+      region="us-central1",
+      display_name="My Test Agent",
+      description="A test agent.",
+  )
+
+  # 1. Verify file operations
+  assert (temp_folder / app_name / "agent.py").is_file()
+  assert (temp_folder / app_name / "__init__.py").is_file()
+  assert (temp_folder / "my_adk_app.py").is_file()
+  # 2. Verify adk_app.py creation
+  adk_app_path = temp_folder / "my_adk_app.py"
+  assert adk_app_path.is_file()
+  content = adk_app_path.read_text()
+  assert f"from test.agent import root_agent" in content
+  assert f"from agent.agent import root_agent" not in content
   assert "adk_app = AdkApp(" in content
   assert "enable_tracing=True" in content
 
