@@ -276,7 +276,7 @@ def _get_content(
       elif part.inline_data.mime_type == "application/pdf":
         content_objects.append(
             ChatCompletionFileObject(
-                type="file", file={"file_data": data_uri, "format": "pdf"}
+                type="file", file={"file_data": data_uri, "format": "application/pdf"}
             )
         )
       else:
