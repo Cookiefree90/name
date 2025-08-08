@@ -223,8 +223,7 @@ class BaseAgent(BaseModel):
       async for event in self._run_async_impl(ctx):
         yield event
 
-      if ctx.end_invocation:
-        return
+      # Don't check for end_invocation. Let the afer agent callbacks get called.
 
       if event := await self.__handle_after_agent_callback(ctx):
         yield event
