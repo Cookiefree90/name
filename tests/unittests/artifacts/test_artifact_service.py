@@ -15,12 +15,14 @@
 """Tests for the artifact service."""
 
 import enum
+import tempfile
 from typing import Optional
 from typing import Union
 from unittest import mock
 
 from google.adk.artifacts.gcs_artifact_service import GcsArtifactService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
+from google.adk.artifacts.local_file_artifact_service import LocalFileArtifactService
 from google.genai import types
 import pytest
 
@@ -30,6 +32,7 @@ Enum = enum.Enum
 class ArtifactServiceType(Enum):
   IN_MEMORY = "IN_MEMORY"
   GCS = "GCS"
+  LOCAL_FILE = "LOCAL_FILE"
 
 
 class MockBlob:
@@ -147,12 +150,20 @@ def get_artifact_service(
   """Creates an artifact service for testing."""
   if service_type == ArtifactServiceType.GCS:
     return mock_gcs_artifact_service()
+  elif service_type == ArtifactServiceType.LOCAL_FILE:
+    temp_dir = tempfile.mkdtemp()
+    return LocalFileArtifactService(base_path=temp_dir)
   return InMemoryArtifactService()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "service_type", [ArtifactServiceType.IN_MEMORY, ArtifactServiceType.GCS]
+    "service_type",
+    [
+        ArtifactServiceType.IN_MEMORY,
+        ArtifactServiceType.GCS,
+        ArtifactServiceType.LOCAL_FILE,
+    ],
 )
 async def test_load_empty(service_type):
   """Tests loading an artifact when none exists."""
@@ -167,7 +178,12 @@ async def test_load_empty(service_type):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "service_type", [ArtifactServiceType.IN_MEMORY, ArtifactServiceType.GCS]
+    "service_type",
+    [
+        ArtifactServiceType.IN_MEMORY,
+        ArtifactServiceType.GCS,
+        ArtifactServiceType.LOCAL_FILE,
+    ],
 )
 async def test_save_load_delete(service_type):
   """Tests saving, loading, and deleting an artifact."""
@@ -211,7 +227,12 @@ async def test_save_load_delete(service_type):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "service_type", [ArtifactServiceType.IN_MEMORY, ArtifactServiceType.GCS]
+    "service_type",
+    [
+        ArtifactServiceType.IN_MEMORY,
+        ArtifactServiceType.GCS,
+        ArtifactServiceType.LOCAL_FILE,
+    ],
 )
 async def test_list_keys(service_type):
   """Tests listing keys in the artifact service."""
@@ -242,7 +263,12 @@ async def test_list_keys(service_type):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "service_type", [ArtifactServiceType.IN_MEMORY, ArtifactServiceType.GCS]
+    "service_type",
+    [
+        ArtifactServiceType.IN_MEMORY,
+        ArtifactServiceType.GCS,
+        ArtifactServiceType.LOCAL_FILE,
+    ],
 )
 async def test_list_versions(service_type):
   """Tests listing versions of an artifact."""

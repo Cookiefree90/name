@@ -15,9 +15,11 @@
 from .base_artifact_service import BaseArtifactService
 from .gcs_artifact_service import GcsArtifactService
 from .in_memory_artifact_service import InMemoryArtifactService
+from .local_file_artifact_service import LocalFileArtifactService
 
 __all__ = [
     'BaseArtifactService',
     'GcsArtifactService',
     'InMemoryArtifactService',
+    'LocalFileArtifactService',
 ]
