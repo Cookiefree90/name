@@ -141,7 +141,7 @@ class VertexAiSessionService(BaseSessionService):
 
       @retry(
           stop=stop_after_attempt(5),
-          wait=wait_exponential(multiplier=1, min=1, max=3),
+          wait=wait_exponential(multiplier=2, min=3, max=10),
           retry=retry_if_result(
               lambda response: not response.get('done', False),
           ),
