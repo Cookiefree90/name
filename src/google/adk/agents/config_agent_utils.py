@@ -105,6 +105,11 @@ def _load_config_from_path(config_path: str) -> AgentConfig:
 
 @working_in_progress("resolve_fully_qualified_name is not ready for use.")
 def resolve_fully_qualified_name(name: str) -> Any:
+  """Resolve a fully qualified name to an actual Python object.
+
+  Args:
+    name: The fully qualified name.
+  """
   try:
     module_path, obj_name = name.rsplit(".", 1)
     module = importlib.import_module(module_path)

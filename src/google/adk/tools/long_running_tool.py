@@ -20,6 +20,8 @@ from typing import Optional
 from google.genai import types
 from typing_extensions import override
 
+from .base_tool import BaseToolConfig
+from .base_tool import ToolArgsConfig
 from .function_tool import FunctionTool
 
 
@@ -58,3 +60,25 @@ class LongRunningFunctionTool(FunctionTool):
       else:
         declaration.description = instruction.lstrip()
     return declaration
+
+  @classmethod
+  @override
+  def from_config(
+      cls, config: ToolArgsConfig, config_abs_path: str
+  ) -> LongRunningFunctionTool:
+    from ..agents import config_agent_utils
+
+    long_running_tool_config = LongRunningToolConfig.model_validate(
+        config.model_dump()
+    )
+    func = config_agent_utils.resolve_fully_qualified_name(
+        long_running_tool_config.func
+    )
+    return cls(func=func)
+
+
+class LongRunningToolConfig(BaseToolConfig):
+  """The config for the LongRunningTool."""
+
+  func: str
+  """The fully qualified name of the function to call."""
