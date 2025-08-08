@@ -187,6 +187,7 @@ class AgentEvaluator:
       num_runs: int = NUM_RUNS,
       agent_name: Optional[str] = None,
       initial_session_file: Optional[str] = None,
+      print_detailed_results: bool = True,
   ):
     """Evaluates an Agent given eval data.
 
@@ -203,6 +204,8 @@ class AgentEvaluator:
       agent_name: The name of the agent.
       initial_session_file: File that contains initial session state that is
         needed by all the evals in the eval dataset.
+      print_detailed_results: Whether to print detailed results for each metric
+        evaluation.
     """
     test_files = []
     if isinstance(eval_dataset_file_path_or_dir, str) and os.path.isdir(
@@ -229,6 +232,7 @@ class AgentEvaluator:
           criteria=criteria,
           num_runs=num_runs,
           agent_name=agent_name,
+          print_detailed_results=print_detailed_results,
       )
 
   @staticmethod
