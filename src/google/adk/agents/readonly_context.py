@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
   from google.genai import types
 
+  from ..sessions.session import Session
   from .invocation_context import InvocationContext
 
 
@@ -37,6 +38,11 @@ class ReadonlyContext:
   def user_content(self) -> Optional[types.Content]:
     """The user content that started this invocation. READONLY field."""
     return self._invocation_context.user_content
+
+  @property
+  def session(self) -> Session:
+    """The current session. READONLY field."""
+    return self._invocation_context.session
 
   @property
   def invocation_id(self) -> str:
