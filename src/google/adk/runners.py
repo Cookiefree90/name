@@ -305,7 +305,15 @@ class Runner:
         save_input_blobs_as_artifacts: Whether to save input blobs as artifacts.
     """
     if not new_message.parts:
-      raise ValueError('No parts in the new_message.')
+      if state_delta:
+        event = Event(
+            invocation_id=invocation_context.invocation_id,
+            author='user',
+            actions=EventActions(state_delta=state_delta),
+        )
+        await self.session_service.append_event(session=session, event=event)
+      else:
+        raise ValueError('No parts in the new_message.')
 
     if self.artifact_service and save_input_blobs_as_artifacts:
       # The runner directly saves the artifacts (if applicable) in the
