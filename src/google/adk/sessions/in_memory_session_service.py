@@ -284,16 +284,28 @@ class InMemorySessionService(BaseSessionService):
       return event
 
     if event.actions and event.actions.state_delta:
-      for key in event.actions.state_delta:
-        if key.startswith(State.APP_PREFIX):
-          self.app_state.setdefault(app_name, {})[
-              key.removeprefix(State.APP_PREFIX)
-          ] = event.actions.state_delta[key]
+      storage_session = self.sessions[app_name][user_id].get(session_id)
 
-        if key.startswith(State.USER_PREFIX):
-          self.user_state.setdefault(app_name, {}).setdefault(user_id, {})[
-              key.removeprefix(State.USER_PREFIX)
-          ] = event.actions.state_delta[key]
+      for key in event.actions.state_delta:
+        value = event.actions.state_delta[key]
+
+        if key.startswith(State.APP_PREFIX):
+          app_key = key.removeprefix(State.APP_PREFIX)
+          if value is State._DELETED:
+            self.app_state.setdefault(app_name, {}).pop(app_key, None)
+          else:
+            self.app_state.setdefault(app_name, {})[app_key] = value
+
+        elif key.startswith(State.USER_PREFIX):
+          user_key = key.removeprefix(State.USER_PREFIX)
+          if value is State._DELETED:
+            self.user_state.setdefault(app_name, {}).setdefault(
+                user_id, {}
+            ).pop(user_key, None)
+          else:
+            self.user_state.setdefault(app_name, {}).setdefault(user_id, {})[
+                user_key
+            ] = value
 
     storage_session = self.sessions[app_name][user_id].get(session_id)
     await super().append_event(session=storage_session, event=event)

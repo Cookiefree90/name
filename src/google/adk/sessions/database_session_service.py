@@ -592,13 +592,13 @@ class DatabaseSessionService(BaseSessionService):
 
       # Merge state and update storage
       if app_state_delta:
-        app_state.update(app_state_delta)
+        _apply_state_delta(app_state, app_state_delta)
         storage_app_state.state = app_state
       if user_state_delta:
-        user_state.update(user_state_delta)
+        _apply_state_delta(user_state, user_state_delta)
         storage_user_state.state = user_state
       if session_state_delta:
-        session_state.update(session_state_delta)
+        _apply_state_delta(session_state, session_state_delta)
         storage_session.state = session_state
 
       sql_session.add(StorageEvent.from_event(session, event))
@@ -618,22 +618,40 @@ def _extract_state_delta(state: dict[str, Any]):
   app_state_delta = {}
   user_state_delta = {}
   session_state_delta = {}
+
   if state:
-    for key in state.keys():
+    for key, value in state.items():
       if key.startswith(State.APP_PREFIX):
-        app_state_delta[key.removeprefix(State.APP_PREFIX)] = state[key]
+        app_state_delta[key.removeprefix(State.APP_PREFIX)] = value
       elif key.startswith(State.USER_PREFIX):
-        user_state_delta[key.removeprefix(State.USER_PREFIX)] = state[key]
+        user_state_delta[key.removeprefix(State.USER_PREFIX)] = value
       elif not key.startswith(State.TEMP_PREFIX):
-        session_state_delta[key] = state[key]
+        session_state_delta[key] = value
+
   return app_state_delta, user_state_delta, session_state_delta
 
 
 def _merge_state(app_state, user_state, session_state):
-  # Merge states for response
+  """Merge states for response, excluding deleted keys."""
   merged_state = copy.deepcopy(session_state)
-  for key in app_state.keys():
-    merged_state[State.APP_PREFIX + key] = app_state[key]
-  for key in user_state.keys():
-    merged_state[State.USER_PREFIX + key] = user_state[key]
+
+  for key, value in app_state.items():
+    if value is not State._DELETED:
+      merged_state[State.APP_PREFIX + key] = value
+
+  for key, value in user_state.items():
+    if value is not State._DELETED:
+      merged_state[State.USER_PREFIX + key] = value
+
   return merged_state
+
+
+def _apply_state_delta(
+    target_state: dict[str, Any], delta: dict[str, Any]
+) -> None:
+  """Apply state delta to target state, handling deletions."""
+  for key, value in delta.items():
+    if value is State._DELETED:
+      target_state.pop(key, None)  # Remove key if it exists
+    else:
+      target_state[key] = value

@@ -14,6 +14,8 @@
 
 from typing import Any
 
+_sentinel = object()
+
 
 class State:
   """A state dict that maintain the current value and the pending-commit delta."""
@@ -21,6 +23,8 @@ class State:
   APP_PREFIX = "app:"
   USER_PREFIX = "user:"
   TEMP_PREFIX = "temp:"
+
+  _DELETED = "__DELETED__"
 
   def __init__(self, value: dict[str, Any], delta: dict[str, Any]):
     """
@@ -34,8 +38,16 @@ class State:
   def __getitem__(self, key: str) -> Any:
     """Returns the value of the state dict for the given key."""
     if key in self._delta:
+      if self._delta[key] is self._DELETED:
+        raise KeyError(key)
       return self._delta[key]
     return self._value[key]
+
+  def __delitem__(self, key: str):
+    """Deletes the value of the state dict for the given key"""
+    if key not in self:
+      raise KeyError(key)
+    self._delta[key] = self._DELETED
 
   def __setitem__(self, key: str, value: Any):
     """Sets the value of the state dict for the given key."""
@@ -46,6 +58,8 @@ class State:
 
   def __contains__(self, key: str) -> bool:
     """Whether the state dict contains the given key."""
+    if key in self._delta and self._delta[key] is self._DELETED:
+      return False
     return key in self._value or key in self._delta
 
   def has_delta(self) -> bool:
@@ -58,6 +72,18 @@ class State:
       return default
     return self[key]
 
+  def pop(self, key: str, default: Any = _sentinel) -> Any:
+    """Deletes the value of the state dict for the given key"""
+    if key in self:
+      value_to_return = self[key]
+      del self[key]
+      return value_to_return
+    else:
+      if default is not _sentinel:
+        return default
+      else:
+        raise KeyError(key)
+
   def update(self, delta: dict[str, Any]):
     """Updates the state dict with the given delta."""
     self._value.update(delta)
@@ -67,5 +93,9 @@ class State:
     """Returns the state dict."""
     result = {}
     result.update(self._value)
-    result.update(self._delta)
+    for key, value in self._delta.items():
+      if value is self._DELETED:
+        result.pop(key, None)
+      else:
+        result[key] = value
     return result
