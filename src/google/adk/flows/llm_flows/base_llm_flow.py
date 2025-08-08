@@ -295,6 +295,12 @@ class BaseLlmFlow(ABC):
               invocation_id=invocation_context.invocation_id,
               author=get_author_for_event(llm_response),
           )
+          trace_call_llm(
+              invocation_context,
+              model_response_event.id,
+              llm_request,
+              llm_response,
+          )
           async for event in self._postprocess_live(
               invocation_context,
               llm_request,

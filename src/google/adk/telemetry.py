@@ -166,9 +166,31 @@ def trace_call_llm(
     llm_request: The LLM request object.
     llm_response: The LLM response object.
   """
-  span = trace.get_current_span()
-  # Special standard Open Telemetry GenaI attributes that indicate
-  # that this is a span related to a Generative AI system.
+  # For live events with usage metadata, create a new span for each event
+  # For regular events or live events without usage data, use the current span
+  if (
+      hasattr(invocation_context, 'live_request_queue')
+      and invocation_context.live_request_queue
+      and llm_response.usage_metadata is not None
+  ):
+    # Live mode with usage data: create new span for each event
+    span_name = f'llm_call_live_event [{event_id[:8]}]'
+    with tracer.start_as_current_span(span_name) as span:
+      _set_llm_span_attributes(
+          span, invocation_context, event_id, llm_request, llm_response
+      )
+  else:
+    # Regular mode or live mode without usage data: use current span
+    span = trace.get_current_span()
+    _set_llm_span_attributes(
+        span, invocation_context, event_id, llm_request, llm_response
+    )
+
+
+def _set_llm_span_attributes(
+    span, invocation_context, event_id, llm_request, llm_response
+):
+  """Set LLM span attributes."""
   span.set_attribute('gen_ai.system', 'gcp.vertex.agent')
   span.set_attribute('gen_ai.request.model', llm_request.model)
   span.set_attribute(
@@ -196,14 +218,16 @@ def trace_call_llm(
   )
 
   if llm_response.usage_metadata is not None:
-    span.set_attribute(
-        'gen_ai.usage.input_tokens',
-        llm_response.usage_metadata.prompt_token_count,
-    )
-    span.set_attribute(
-        'gen_ai.usage.output_tokens',
-        llm_response.usage_metadata.candidates_token_count,
-    )
+    if llm_response.usage_metadata.prompt_token_count is not None:
+      span.set_attribute(
+          'gen_ai.usage.input_tokens',
+          llm_response.usage_metadata.prompt_token_count,
+      )
+    if llm_response.usage_metadata.candidates_token_count is not None:
+      span.set_attribute(
+          'gen_ai.usage.output_tokens',
+          llm_response.usage_metadata.candidates_token_count,
+      )
 
 
 def trace_send_data(

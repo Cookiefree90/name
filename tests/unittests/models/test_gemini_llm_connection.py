@@ -109,3 +109,140 @@ async def test_close(gemini_connection, mock_gemini_session):
   await gemini_connection.close()
 
   mock_gemini_session.close.assert_called_once()
+
+
+def test_fix_usage_metadata_with_missing_candidates_token_count(
+    gemini_connection,
+):
+  """Test _fix_usage_metadata with missing candidates_token_count."""
+  # Create usage metadata with missing candidates_token_count
+  usage_metadata = types.GenerateContentResponseUsageMetadata(
+      total_token_count=100,
+      prompt_token_count=60,
+      candidates_token_count=None,
+  )
+
+  result = gemini_connection._fix_usage_metadata(usage_metadata)
+
+  # Should calculate candidates_token_count as total - prompt = 100 - 60 = 40
+  assert result.total_token_count == 100
+  assert result.prompt_token_count == 60
+  assert result.candidates_token_count == 40
+
+
+def test_fix_usage_metadata_with_none_input(gemini_connection):
+  """Test _fix_usage_metadata with None input."""
+  result = gemini_connection._fix_usage_metadata(None)
+  assert result is None
+
+
+def test_fix_usage_metadata_with_existing_candidates_token_count(
+    gemini_connection,
+):
+  """Test _fix_usage_metadata when candidates_token_count already exists."""
+  usage_metadata = types.GenerateContentResponseUsageMetadata(
+      total_token_count=100,
+      prompt_token_count=60,
+      candidates_token_count=40,
+  )
+
+  result = gemini_connection._fix_usage_metadata(usage_metadata)
+
+  # Should return the original metadata unchanged
+  assert result is usage_metadata
+  assert result.total_token_count == 100
+  assert result.prompt_token_count == 60
+  assert result.candidates_token_count == 40
+
+
+def test_fix_usage_metadata_with_missing_total_token_count(gemini_connection):
+  """Test _fix_usage_metadata with missing total_token_count."""
+  usage_metadata = types.GenerateContentResponseUsageMetadata(
+      total_token_count=None,
+      prompt_token_count=60,
+      candidates_token_count=None,
+  )
+
+  result = gemini_connection._fix_usage_metadata(usage_metadata)
+
+  # Should return the original metadata unchanged
+  assert result is usage_metadata
+  assert result.total_token_count is None
+  assert result.prompt_token_count == 60
+  assert result.candidates_token_count is None
+
+
+def test_fix_usage_metadata_with_missing_prompt_token_count(gemini_connection):
+  """Test _fix_usage_metadata with missing prompt_token_count."""
+  usage_metadata = types.GenerateContentResponseUsageMetadata(
+      total_token_count=100,
+      prompt_token_count=None,
+      candidates_token_count=None,
+  )
+
+  result = gemini_connection._fix_usage_metadata(usage_metadata)
+
+  # Should return the original metadata unchanged
+  assert result is usage_metadata
+  assert result.total_token_count == 100
+  assert result.prompt_token_count is None
+  assert result.candidates_token_count is None
+
+
+def test_fix_usage_metadata_with_zero_calculated_candidates(gemini_connection):
+  """Test _fix_usage_metadata when calculated candidates would be zero."""
+  usage_metadata = types.GenerateContentResponseUsageMetadata(
+      total_token_count=60,
+      prompt_token_count=60,
+      candidates_token_count=None,
+  )
+
+  result = gemini_connection._fix_usage_metadata(usage_metadata)
+
+  # Should not create new metadata when calculated candidates is 0 or negative
+  assert result is usage_metadata
+  assert result.total_token_count == 60
+  assert result.prompt_token_count == 60
+  assert result.candidates_token_count is None
+
+
+def test_fix_usage_metadata_with_negative_calculated_candidates(
+    gemini_connection,
+):
+  """Test _fix_usage_metadata when calculated candidates would be negative."""
+  usage_metadata = types.GenerateContentResponseUsageMetadata(
+      total_token_count=50,
+      prompt_token_count=60,
+      candidates_token_count=None,
+  )
+
+  result = gemini_connection._fix_usage_metadata(usage_metadata)
+
+  # Should not create new metadata when calculated candidates is negative
+  assert result is usage_metadata
+  assert result.total_token_count == 50
+  assert result.prompt_token_count == 60
+  assert result.candidates_token_count is None
+
+
+def test_fix_usage_metadata_preserves_other_fields(gemini_connection):
+  """Test _fix_usage_metadata preserves other optional fields."""
+  from google.genai import types
+
+  usage_metadata = types.GenerateContentResponseUsageMetadata(
+      total_token_count=100,
+      prompt_token_count=60,
+      candidates_token_count=None,
+      cached_content_token_count=10,
+      thoughts_token_count=5,
+  )
+
+  result = gemini_connection._fix_usage_metadata(usage_metadata)
+
+  # Should create new metadata with calculated candidates and preserved fields
+  assert result is not usage_metadata  # New object created
+  assert result.total_token_count == 100
+  assert result.prompt_token_count == 60
+  assert result.candidates_token_count == 40
+  assert result.cached_content_token_count == 10
+  assert result.thoughts_token_count == 5

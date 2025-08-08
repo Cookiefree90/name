@@ -148,7 +148,11 @@ class GeminiLlmConnection(BaseLlmConnection):
         content = message.server_content.model_turn
         if content and content.parts:
           llm_response = LlmResponse(
-              content=content, interrupted=message.server_content.interrupted
+              content=content,
+              interrupted=message.server_content.interrupted,
+              usage_metadata=self._fix_usage_metadata(
+                  getattr(message, 'usage_metadata', None)
+              ),
           )
           if content.parts[0].text:
             text += content.parts[0].text
@@ -169,7 +173,10 @@ class GeminiLlmConnection(BaseLlmConnection):
               )
           ]
           llm_response = LlmResponse(
-              content=types.Content(role='user', parts=parts)
+              content=types.Content(role='user', parts=parts),
+              usage_metadata=self._fix_usage_metadata(
+                  getattr(message, 'usage_metadata', None)
+              ),
           )
           yield llm_response
         if (
@@ -190,7 +197,11 @@ class GeminiLlmConnection(BaseLlmConnection):
               )
           ]
           llm_response = LlmResponse(
-              content=types.Content(role='model', parts=parts), partial=True
+              content=types.Content(role='model', parts=parts),
+              partial=True,
+              usage_metadata=self._fix_usage_metadata(
+                  getattr(message, 'usage_metadata', None)
+              ),
           )
           yield llm_response
 
@@ -199,7 +210,11 @@ class GeminiLlmConnection(BaseLlmConnection):
             yield self.__build_full_text_response(text)
             text = ''
           yield LlmResponse(
-              turn_complete=True, interrupted=message.server_content.interrupted
+              turn_complete=True,
+              interrupted=message.server_content.interrupted,
+              usage_metadata=self._fix_usage_metadata(
+                  getattr(message, 'usage_metadata', None)
+              ),
           )
           break
         # in case of empty content or parts, we sill surface it
@@ -209,7 +224,12 @@ class GeminiLlmConnection(BaseLlmConnection):
         if message.server_content.interrupted and text:
           yield self.__build_full_text_response(text)
           text = ''
-        yield LlmResponse(interrupted=message.server_content.interrupted)
+        yield LlmResponse(
+            interrupted=message.server_content.interrupted,
+            usage_metadata=self._fix_usage_metadata(
+                getattr(message, 'usage_metadata', None)
+            ),
+        )
       if message.tool_call:
         if text:
           yield self.__build_full_text_response(text)
@@ -218,14 +238,94 @@ class GeminiLlmConnection(BaseLlmConnection):
             types.Part(function_call=function_call)
             for function_call in message.tool_call.function_calls
         ]
-        yield LlmResponse(content=types.Content(role='model', parts=parts))
+        yield LlmResponse(
+            content=types.Content(role='model', parts=parts)
+            usage_metadata=self._fix_usage_metadata(
+                getattr(message, 'usage_metadata', None)
+            ),
+        )
       if message.session_resumption_update:
         logger.info('Redeived session reassumption message: %s', message)
         yield (
             LlmResponse(
                 live_session_resumption_update=message.session_resumption_update
+                usage_metadata=self._fix_usage_metadata(
+                    getattr(message, 'usage_metadata', None)
+                ),
             )
         )
+
+  def _fix_usage_metadata(self, usage_metadata):
+    """
+    Fix missing candidates_token_count in Gemini Live API responses.
+
+    The Gemini Live API inconsistently returns usage metadata. While it typically
+    provides total_token_count and prompt_token_count, it often leaves
+    candidates_token_count as None. This creates incomplete telemetry data which
+    affects billing reporting and token usage monitoring.
+
+    This method calculates the missing candidates_token_count using the formula:
+    candidates_token_count = total_token_count - prompt_token_count
+
+    Args:
+      usage_metadata: The usage metadata from the Live API response, which may
+        have missing candidates_token_count.
+
+    Returns:
+      Fixed usage metadata with calculated candidates_token_count, or the
+      original metadata if no fix is needed/possible.
+    """
+    if not usage_metadata:
+      return usage_metadata
+
+    # Safely get token counts using getattr with defaults
+    total_tokens = getattr(usage_metadata, 'total_token_count', None)
+    prompt_tokens = getattr(usage_metadata, 'prompt_token_count', None)
+    candidates_tokens = getattr(usage_metadata, 'candidates_token_count', None)
+
+    # Only fix if we have total and prompt but missing candidates
+    if (
+        total_tokens is not None
+        and prompt_tokens is not None
+        and candidates_tokens is None
+    ):
+      # Calculate candidates tokens as: total - prompt
+      calculated_candidates = total_tokens - prompt_tokens
+
+      if calculated_candidates > 0:
+        # Create a new usage metadata object with the calculated value
+        from google.genai import types
+
+        return types.GenerateContentResponseUsageMetadata(
+            total_token_count=total_tokens,
+            prompt_token_count=prompt_tokens,
+            candidates_token_count=calculated_candidates,
+            # Copy other fields if they exist
+            cache_tokens_details=getattr(
+                usage_metadata, 'cache_tokens_details', None
+            ),
+            cached_content_token_count=getattr(
+                usage_metadata, 'cached_content_token_count', None
+            ),
+            candidates_tokens_details=getattr(
+                usage_metadata, 'candidates_tokens_details', None
+            ),
+            prompt_tokens_details=getattr(
+                usage_metadata, 'prompt_tokens_details', None
+            ),
+            thoughts_token_count=getattr(
+                usage_metadata, 'thoughts_token_count', None
+            ),
+            tool_use_prompt_token_count=getattr(
+                usage_metadata, 'tool_use_prompt_token_count', None
+            ),
+            tool_use_prompt_tokens_details=getattr(
+                usage_metadata, 'tool_use_prompt_tokens_details', None
+            ),
+            traffic_type=getattr(usage_metadata, 'traffic_type', None),
+        )
+
+    return usage_metadata
 
   async def close(self):
     """Closes the llm server connection."""

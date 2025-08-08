@@ -326,3 +326,189 @@ def test_trace_merged_tool_calls_sets_correct_attributes(
       expected_calls, any_order=True
   )
   mock_event_fixture.model_dumps_json.assert_called_once_with(exclude_none=True)
+
+
+@pytest.mark.asyncio
+async def test_trace_call_llm_live_mode_with_usage_metadata_creates_new_span(
+    monkeypatch,
+):
+  """Test that live mode with usage metadata creates new spans."""
+  mock_tracer = mock.MagicMock()
+  mock_span = mock.MagicMock()
+  mock_tracer.start_as_current_span.return_value.__enter__.return_value = (
+      mock_span
+  )
+
+  monkeypatch.setattr('google.adk.telemetry.tracer', mock_tracer)
+
+  agent = LlmAgent(name='test_agent')
+  invocation_context = await _create_invocation_context(agent)
+
+  # Set up live request queue to indicate live mode
+  from google.adk.agents.live_request_queue import LiveRequestQueue
+
+  invocation_context.live_request_queue = LiveRequestQueue()
+
+  llm_request = LlmRequest(
+      config=types.GenerateContentConfig(system_instruction=''),
+  )
+  llm_response = LlmResponse(
+      turn_complete=True,
+      usage_metadata=types.GenerateContentResponseUsageMetadata(
+          total_token_count=100,
+          prompt_token_count=50,
+          candidates_token_count=50,
+      ),
+  )
+
+  event_id = 'test_event_id_123'
+  trace_call_llm(invocation_context, event_id, llm_request, llm_response)
+
+  # Should create new span with live event naming
+  expected_span_name = f'llm_call_live_event [{event_id[:8]}]'
+  mock_tracer.start_as_current_span.assert_called_once_with(expected_span_name)
+
+  # Verify span attributes were set on the new span
+  expected_calls = [
+      mock.call('gen_ai.system', 'gcp.vertex.agent'),
+      mock.call('gen_ai.request.model', llm_request.model),
+      mock.call('gen_ai.usage.input_tokens', 50),
+      mock.call('gen_ai.usage.output_tokens', 50),
+  ]
+  mock_span.set_attribute.assert_has_calls(expected_calls, any_order=True)
+
+
+@pytest.mark.asyncio
+async def test_trace_call_llm_live_mode_without_usage_metadata_uses_current_span(
+    monkeypatch, mock_span_fixture
+):
+  """Test that live mode without usage metadata uses current span."""
+  mock_tracer = mock.MagicMock()
+  monkeypatch.setattr('google.adk.telemetry.tracer', mock_tracer)
+  monkeypatch.setattr(
+      'opentelemetry.trace.get_current_span', lambda: mock_span_fixture
+  )
+
+  agent = LlmAgent(name='test_agent')
+  invocation_context = await _create_invocation_context(agent)
+
+  # Set up live request queue to indicate live mode
+  from google.adk.agents.live_request_queue import LiveRequestQueue
+
+  invocation_context.live_request_queue = LiveRequestQueue()
+
+  llm_request = LlmRequest(
+      config=types.GenerateContentConfig(system_instruction=''),
+  )
+  llm_response = LlmResponse(
+      turn_complete=True,
+      usage_metadata=None,  # No usage metadata
+  )
+
+  event_id = 'test_event_id_456'
+  trace_call_llm(invocation_context, event_id, llm_request, llm_response)
+
+  # Should NOT create new span
+  mock_tracer.start_as_current_span.assert_not_called()
+
+  # Should use current span
+  expected_calls = [
+      mock.call('gen_ai.system', 'gcp.vertex.agent'),
+      mock.call('gen_ai.request.model', llm_request.model),
+  ]
+  mock_span_fixture.set_attribute.assert_has_calls(
+      expected_calls, any_order=True
+  )
+
+
+@pytest.mark.asyncio
+async def test_trace_call_llm_regular_mode_uses_current_span(
+    monkeypatch, mock_span_fixture
+):
+  """Test that regular mode (no live_request_queue) uses current span."""
+  mock_tracer = mock.MagicMock()
+  monkeypatch.setattr('google.adk.telemetry.tracer', mock_tracer)
+  monkeypatch.setattr(
+      'opentelemetry.trace.get_current_span', lambda: mock_span_fixture
+  )
+
+  agent = LlmAgent(name='test_agent')
+  invocation_context = await _create_invocation_context(agent)
+
+  # No live_request_queue - regular mode
+
+  llm_request = LlmRequest(
+      config=types.GenerateContentConfig(system_instruction=''),
+  )
+  llm_response = LlmResponse(
+      turn_complete=True,
+      usage_metadata=types.GenerateContentResponseUsageMetadata(
+          total_token_count=100,
+          prompt_token_count=50,
+          candidates_token_count=50,
+      ),
+  )
+
+  event_id = 'test_event_id_789'
+  trace_call_llm(invocation_context, event_id, llm_request, llm_response)
+
+  # Should NOT create new span even with usage metadata
+  mock_tracer.start_as_current_span.assert_not_called()
+
+  # Should use current span
+  expected_calls = [
+      mock.call('gen_ai.system', 'gcp.vertex.agent'),
+      mock.call('gen_ai.request.model', llm_request.model),
+      mock.call('gen_ai.usage.input_tokens', 50),
+      mock.call('gen_ai.usage.output_tokens', 50),
+  ]
+  mock_span_fixture.set_attribute.assert_has_calls(
+      expected_calls, any_order=True
+  )
+
+
+@pytest.mark.asyncio
+async def test_trace_call_llm_live_mode_span_name_formatting(monkeypatch):
+  """Test that live mode span names are formatted correctly."""
+  mock_tracer = mock.MagicMock()
+  mock_span = mock.MagicMock()
+  mock_tracer.start_as_current_span.return_value.__enter__.return_value = (
+      mock_span
+  )
+
+  monkeypatch.setattr('google.adk.telemetry.tracer', mock_tracer)
+
+  agent = LlmAgent(name='test_agent')
+  invocation_context = await _create_invocation_context(agent)
+
+  # Set up live request queue
+  from google.adk.agents.live_request_queue import LiveRequestQueue
+
+  invocation_context.live_request_queue = LiveRequestQueue()
+
+  llm_request = LlmRequest(
+      config=types.GenerateContentConfig(system_instruction=''),
+  )
+  llm_response = LlmResponse(
+      turn_complete=True,
+      usage_metadata=types.GenerateContentResponseUsageMetadata(
+          total_token_count=100,
+      ),
+  )
+
+  # Test with different event ID lengths
+  test_cases = [
+      ('12345678', 'llm_call_live_event [12345678]'),
+      (
+          '123456789012',
+          'llm_call_live_event [12345678]',
+      ),  # Should truncate to 8 chars
+      ('1234', 'llm_call_live_event [1234]'),  # Shorter than 8 chars
+  ]
+
+  for event_id, expected_span_name in test_cases:
+    mock_tracer.reset_mock()
+    trace_call_llm(invocation_context, event_id, llm_request, llm_response)
+    mock_tracer.start_as_current_span.assert_called_once_with(
+        expected_span_name
+    )
