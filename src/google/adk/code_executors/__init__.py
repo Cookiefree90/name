@@ -49,3 +49,14 @@ except ImportError:
       ' Executor with agents, please install it. If not, you can ignore this'
       ' warning.'
   )
+
+try:
+  from .gke_code_executor import GkeCodeExecutor
+
+  __all__.append('GkeCodeExecutor')
+except ImportError:
+  logger.debug(
+      'The kubernetes sdk is not installed. If you want to use the GKE Code'
+      ' Executor with agents, please install it. If not, you can ignore this'
+      ' warning.'
+  )
