@@ -29,7 +29,7 @@ def get_bigquery_client(
     *, project: Optional[str], credentials: Credentials
 ) -> bigquery.Client:
   """Get a BigQuery client."""
-
+  # Test
   client_info = google.api_core.client_info.ClientInfo(user_agent=USER_AGENT)
 
   bigquery_client = bigquery.Client(
