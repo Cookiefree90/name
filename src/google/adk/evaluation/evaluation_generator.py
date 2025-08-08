@@ -34,6 +34,7 @@ from .eval_case import EvalCase
 from .eval_case import IntermediateData
 from .eval_case import Invocation
 from .eval_case import SessionInput
+from .eval_case import ToolUseWithResponse
 from .eval_set import EvalSet
 
 
@@ -187,6 +188,7 @@ class EvaluationGenerator:
       final_response = None
       user_content = invocation.user_content
       tool_uses = []
+      tool_uses_with_responses_by_id = {}
       invocation_id = ""
 
       async for event in runner.run_async(
@@ -198,16 +200,29 @@ class EvaluationGenerator:
 
         if event.is_final_response() and event.content and event.content.parts:
           final_response = event.content
-        elif event.get_function_calls():
-          for call in event.get_function_calls():
-            tool_uses.append(call)
+        else:
+          if event.get_function_calls():
+            for call in event.get_function_calls():
+              tool_uses.append(call)
+              tool_uses_with_responses_by_id[call.id] = ToolUseWithResponse(
+                  function_call=call
+              )
+          elif event.get_function_responses():
+            for response in event.get_function_responses():
+              if response.id in tool_uses_with_responses_by_id:
+                tool_uses_with_responses_by_id[
+                    response.id
+                ].function_response = response
 
       response_invocations.append(
           Invocation(
               invocation_id=invocation_id,
               user_content=user_content,
               final_response=final_response,
-              intermediate_data=IntermediateData(tool_uses=tool_uses),
+              intermediate_data=IntermediateData(
+                  tool_uses=tool_uses,
+                  tool_uses_with_responses=tool_uses_with_responses_by_id.values(),
+              ),
           )
       )
 
