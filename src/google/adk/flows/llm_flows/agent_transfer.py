@@ -24,9 +24,8 @@ from typing_extensions import override
 from ...agents.invocation_context import InvocationContext
 from ...events.event import Event
 from ...models.llm_request import LlmRequest
-from ...tools.function_tool import FunctionTool
 from ...tools.tool_context import ToolContext
-from ...tools.transfer_to_agent_tool import transfer_to_agent
+from ...tools.transfer_to_agent_tool import TransferToAgentTool
 from ._base_llm_processor import BaseLlmRequestProcessor
 
 if typing.TYPE_CHECKING:
@@ -50,15 +49,18 @@ class _AgentTransferLlmRequestProcessor(BaseLlmRequestProcessor):
     if not transfer_targets:
       return
 
+    transfer_to_agent = TransferToAgentTool(
+        agent_names=[agent.name for agent in transfer_targets]
+    )
+
     llm_request.append_instructions([
         _build_target_agents_instructions(
-            invocation_context.agent, transfer_targets
+            transfer_to_agent.name, invocation_context.agent, transfer_targets
         )
     ])
 
-    transfer_to_agent_tool = FunctionTool(func=transfer_to_agent)
     tool_context = ToolContext(invocation_context)
-    await transfer_to_agent_tool.process_llm_request(
+    await transfer_to_agent.process_llm_request(
         tool_context=tool_context, llm_request=llm_request
     )
 
@@ -80,7 +82,7 @@ line_break = '\n'
 
 
 def _build_target_agents_instructions(
-    agent: LlmAgent, target_agents: list[BaseAgent]
+    tool_name: str, agent: LlmAgent, target_agents: list[BaseAgent]
 ) -> str:
   si = f"""
 You have a list of other agents to transfer to:
@@ -93,7 +95,7 @@ If you are the best to answer the question according to your description, you
 can answer it.
 
 If another agent is better for answering the question according to its
-description, call `{_TRANSFER_TO_AGENT_FUNCTION_NAME}` function to transfer the
+description, call `{tool_name}` function to transfer the
 question to that agent. When transferring, do not generate any text other than
 the function call.
 """
@@ -105,9 +107,6 @@ you are best for answering the question according to the descriptions, transfer
 to your parent agent.
 """
   return si
-
-
-_TRANSFER_TO_AGENT_FUNCTION_NAME = transfer_to_agent.__name__
 
 
 def _get_transfer_targets(agent: LlmAgent) -> list[BaseAgent]:
