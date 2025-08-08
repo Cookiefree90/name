@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
   from ..auth.auth_credential import AuthCredential
   from ..auth.auth_tool import AuthConfig
+  from ..events.event import Event
   from ..events.event_actions import EventActions
   from ..sessions.state import State
   from .invocation_context import InvocationContext
@@ -47,6 +48,7 @@ class CallbackContext(ReadonlyContext):
 
     # TODO(weisun): make this public for Agent Development Kit, but private for
     # users.
+    self._events = invocation_context.session.events
     self._event_actions = event_actions or EventActions()
     self._state = State(
         value=invocation_context.session.state,
@@ -62,6 +64,12 @@ class CallbackContext(ReadonlyContext):
     e.g. `ctx.state['foo'] = 'bar'`
     """
     return self._state
+
+  @property
+  def events(self) -> list[Event]:
+    """The events of the current session.
+    """
+    return self._events
 
   async def load_artifact(
       self, filename: str, version: Optional[int] = None
