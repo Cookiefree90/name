@@ -177,6 +177,15 @@ class LlmAgent(BaseAgent):
     instruction and input
   """
 
+  history_window_size: Optional[int] = None
+  """The size of the history window (N) to use.
+
+  This parameter is ONLY used when `include_contents` is set to 'windowed'.
+  It must be a positive integer defining the number of recent conversational
+  turns to include in the model context. 
+  """
+
+
   # Controlled input/output configurations - Start
   input_schema: Optional[type[BaseModel]] = None
   """The input schema when agent is used as a tool."""
@@ -277,6 +286,31 @@ class LlmAgent(BaseAgent):
     When present, the returned dict will be used as tool result.
   """
   # Callbacks - End
+
+  @model_validator(mode='after')
+  def validate_history_window(self) -> 'LlmAgent':
+    """Validate that history_window_size is used correctly."""
+    is_windowed = self.include_contents == 'windowed'
+    window_size_is_set = self.history_window_size is not None
+
+    # Case 1: 'windowed' is set, but the window size is not.
+    if is_windowed and not window_size_is_set:
+      raise ValueError(
+          "When 'include_contents' is 'windowed', 'history_window_size' must be set to a positive integer."
+      )
+
+    # Case 2: 'windowed' is set, but window size is not a positive integer.
+    if is_windowed and window_size_is_set and self.history_window_size <= 0:
+      raise ValueError("'history_window_size' must be a positive integer.")
+
+    # Case 3: 'windowed' is NOT set, but the window size is.
+    if not is_windowed and window_size_is_set:
+      raise ValueError(
+          "'history_window_size' can only be set when 'include_contents' is 'windowed'."
+      )
+
+    return self
+
 
   @override
   async def _run_async_impl(
