@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import List
 from typing import Optional
 from typing import Union
@@ -40,7 +41,9 @@ class BigQueryToolset(BaseToolset):
       self,
       *,
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
-      credentials_config: Optional[BigQueryCredentialsConfig] = None,
+      credentials_config: Optional[
+          BigQueryCredentialsConfig | Callable[[], BigQueryCredentialsConfig]
+      ] = None,
       bigquery_tool_config: Optional[BigQueryToolConfig] = None,
   ):
     self.tool_filter = tool_filter
@@ -66,10 +69,14 @@ class BigQueryToolset(BaseToolset):
       self, readonly_context: Optional[ReadonlyContext] = None
   ) -> List[BaseTool]:
     """Get tools from the toolset."""
+    credential_config = self._credentials_config
+    if callable(credential_config):
+      credential_config = credential_config()
+
     all_tools = [
         BigQueryTool(
             func=func,
-            credentials_config=self._credentials_config,
+            credentials_config=credential_config,
             bigquery_tool_config=self._tool_config,
         )
         for func in [
