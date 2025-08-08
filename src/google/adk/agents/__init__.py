@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .array_iterator_agent import ArrayIteratorAgent
 from .base_agent import BaseAgent
 from .invocation_context import InvocationContext
 from .live_request_queue import LiveRequest
@@ -25,6 +26,7 @@ from .sequential_agent import SequentialAgent
 
 __all__ = [
     'Agent',
+    'ArrayIteratorAgent',
     'BaseAgent',
     'LlmAgent',
     'LoopAgent',
